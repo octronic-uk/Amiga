@@ -1,0 +1,38 @@
+#!/bin/bash
+
+PROJECT=$1
+ASM_EXT="S"
+ASSEMBLER="vasmm68k-mot"
+FLAGS="-Fhunkexe"
+INCLUDE="-I../INCDIR/"
+
+echo "Building ${PROJECT}"
+
+cd ${PROJECT}
+
+if [[ $? != 0 ]]; then
+    echo "Unable to find project: ${PROJECT}"
+    exit 1
+fi
+    
+echo
+execline="${ASSEMBLER} ${INCLUDE} ${FLAGS} -o ${PROJECT} ${PROJECT}.${ASM_EXT}"
+echo Executing ${execline}
+${execline}
+
+BUILD_RESULT=$?
+
+echo
+
+if [[ ${BUILD_RESULT} == 0 ]]; then
+
+    echo
+    echo "Build Succeeded! :D"
+    ls -la ${PROJECT}
+    file ${PROJECT}
+    echo
+    exit 0
+else
+    echo "Build Failed :("
+    exit 1
+fi
