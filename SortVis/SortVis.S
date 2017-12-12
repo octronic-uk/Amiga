@@ -5,8 +5,8 @@
 ;   \/_/\/_/ \/_____/ \/_/\/_/ 
 ;      ash@octronic.co.uk      
 ;
-;   INTU.S
-;       Some Amiga/Intuition Exercises
+;   SortVis.S
+;       Sorting algorithm visualiser. 
 
 ;-------------------------------------------------------------------------------
     section text
@@ -15,7 +15,7 @@
 main:
     move.w  #FALSE,vMainDone
     ; Open Intuition Lib
-    pea     vIntuLibName
+    pea     vIntuLibNameStr
     jsr     exec_open_lib
     addq.l  #4,sp
     move.l  d0,vIntuBase
@@ -24,14 +24,6 @@ main:
     jsr     intu_open_window
     jsr     intu_set_menu_strip
     jsr     intu_get_user_port_handle
-    ; Print some text
-    pea     vRequesterText
-    move.l  #5,-(sp)
-    move.l  #5,-(sp)
-    jsr     intu_print_itext
-    add.l   #12,sp
-    ; Show requester
-    jsr     intu_auto_request
 _main_loop:
     move.l  vUserPortPtr,-(sp)
     jsr     exec_get_msg
@@ -50,6 +42,19 @@ _main_close:
     jsr     exec_close_lib
     addq.l  #4,sp
     ; Close Application
+    rts
+
+; App Routines -----------------------------------------------------------------
+
+message_handler:
+    cmpi.l  #0,vIntuMsgPtr
+    beq     _message_handler_done
+    movea.l vIntuMsgPtr,a0
+    move.l  20(a0),d6
+    cmpi.l  #IDCMP_CLOSEWINDOW,d6
+    move.w  #TRUE,vMainDone
+    beq     _message_handler_done
+_message_handler_done: 
     rts
 
 ; Exec Routines ----------------------------------------------------------------
@@ -106,6 +111,9 @@ intu_close_window:
     jsr     INTU_CLOSE_WINDOW(a6)
     rts
 
+; Show requester
+; Usage
+;   jsr     intu_auto_request
 intu_auto_request:
     move.l  vWindowPtr,a0
     lea     vRequesterText,a1
@@ -122,7 +130,7 @@ intu_auto_request:
 intu_set_menu_strip:
     movea.l vIntuBase,a6
     movea.l vWindowPtr,a0
-    lea     vMenuPtr,a1
+    lea     vFileMenu,a1
     jsr     INTU_SET_MENU_STRIP(a6)
     rts
 
@@ -134,12 +142,18 @@ intu_clear_menu_strip:
 
 intu_get_rast_port:
     movea.l vWindowPtr,a0
-    move.l  50(a0),d0
+    movea.l  50(a0),a0
     rts
 
+; Print some text
+; Usage:
+;    pea     vRequesterText
+;    move.l  #5,-(sp)
+;    move.l  #5,-(sp)
+;    jsr     intu_print_itext
+;    add.l   #12,sp
 intu_print_itext:
     jsr     intu_get_rast_port
-    movea.l d0,a0               ; RastPort to a0
     movea.l vIntuBase,a6
     movea.l 12(sp),a1           ; Text struct pointer
     move.l  8(sp),d0            ; X
@@ -147,33 +161,36 @@ intu_print_itext:
     jsr     INTU_PRINT_ITEXT(a6)
     rts
 
-; App Routines -----------------------------------------------------------------
-
-message_handler:
-    cmpi.l  #0,vIntuMsgPtr
-    beq     _message_handler_done
-    movea.l vIntuMsgPtr,a0
-    move.l  20(a0),d6
-    cmpi.l  #IDCMP_CLOSEWINDOW,d6
-    move.w  #TRUE,vMainDone
-    beq     _message_handler_done
-_message_handler_done: 
+;   Usage
+;       pea     ImageStruct
+;       move.w  X,-(sp)
+;       move.w  Y,-(sp)
+;       jsr     intu_draw_image
+;       add.l  #12,sp
+intu_draw_image:
+    jsr     intu_get_rast_port  ; a0
+    movea.l 12(sp),a1            ; image struct
+    movea.l vIntuBase,a6        ; intu
+    move.l  8(sp),d0            ; X
+    move.l  4(sp),d1            ; Y
+    jsr     INTU_DRAW_IMAGE(a6)
     rts
+
 
 ;-------------------------------------------------------------------------------
     section data
 ;-------------------------------------------------------------------------------
     even
-vIntuLibName:  
+vIntuLibNameStr:  
     dc.b    "intuition.library",0
 
     even
-vScreenTitle:       
-    dc.b    "Ash's Screen",0 
+vScreenTitleStr:       
+    dc.b    "Octronic SortVis v1.0",0 
 
     even
-vWindowTitle:       
-    dc.b    "Ash's Window",0
+vWindowTitleStr:       
+    dc.b    "Setup Visualisation",0
 
 ; Screen Definition ------------------------------------------------------------
 
@@ -183,13 +200,13 @@ vScreenDef_X:           dc.w    0
 vScreenDef_Y:           dc.w    0
 vScreenDef_W:           dc.w    320 
 vScreenDef_H:           dc.w    200
-vScreenDef_Depth:       dc.w    2
+vScreenDef_Depth:       dc.w    4 
 vScreenDef_DetailPen:   dc.b    0
 vScreenDef_BlockPen:    dc.b    1
 vScreenDef_ViewMode:    dc.w    2
 vScreenDef_ScreenType:  dc.w    15
 vScreenDef_Font:        dc.l    0
-vScreenDef_Title:       dc.l    vScreenTitle
+vScreenDef_Title:       dc.l    vScreenTitleStr
 vScreenDef_Gadgets:     dc.l    0
 vScreenDef_Bitmap:      dc.l    0
 
@@ -205,13 +222,13 @@ vWindowDef_FGColour:    dc.b    1
 vWindowDef_BGColour:    dc.b    3
 vWindowDef_IDCMP:       dc.l    $200
 vWindowDef_Type:        dc.l    $100f
-vWindowDef_Gadget:      dc.l    0
+vWindowDef_Gadget:      dc.l    vSoundCheckboxGadget
 vWindowDef_Graphics:    dc.l    0
-vWindowDef_Title:       dc.l    vWindowTitle
+vWindowDef_Title:       dc.l    vWindowTitleStr
 vWindowDef_ScreenPtr:   dc.l    0
 vWindowDef_Bitmap:      dc.l    0
-vWindowDef_MinW:        dc.w    50 
-vWindowDef_MinH:        dc.w    50
+vWindowDef_MinW:        dc.w    100 
+vWindowDef_MinH:        dc.w    100
 vWindowDef_MaxW:        dc.w    320
 vWindowDef_MaxH:        dc.w    200
 vWindowDef_ScreenType:  dc.w    15
@@ -241,11 +258,11 @@ vRequesterLeftText:
     even
     dc.w    5,3     ; X/y pos
     dc.l    0       ; Charset
-    dc.l    vRequesterLeftTextStr
+    dc.l    vRequesterLeftStr
     dc.l    0
 
     even
-vRequesterLeftTextStr:     
+vRequesterLeftStr:     
     dc.b    "Left Text",0
 
     even
@@ -256,55 +273,137 @@ vRequesterRightText:
     even
     dc.w    5,3  ; X/Y pos
     dc.l    0   ; Charset
-    dc.l    vRequesterRightTextStr
+    dc.l    vRequesterRightStr
     dc.l    0
 
     even
-vRequesterRightTextStr:
+vRequesterRightStr:
     dc.b    "Right Text",0
 
 ; File Menu --------------------------------------------------------------------
 
     even
-vMenuPtr:
+vFileMenu:
     even
     dc.l    0                   ; Next Menu
     dc.w    0,0,50,10           ; X/Y/W/H of Title
     dc.w    1                   ; Menu Enabled
-    dc.l    vMenuTextPtr        ; Text pointer
-    dc.l    vMenuItem1          ; First Menu Item
+    dc.l    vFileMenuStr        ; Text pointer
+    dc.l    vFileQuitMenuItem   ; First Menu Item
     dc.w    0,0,0,0             ; Reserved
 
     even
-vMenuTextPtr:   
+vFileMenuStr:   
     dc.b    "File",0
 
     even
-vMenuItem1:
-    dc.l    0                   ; Next Menu Entry
-    dc.w    0,0,90,10           ; X/Y/W/H
-    dc.w    %10011111           ; Mode Flag
-    dc.l    0                   ; No Connection
-    dc.l    vMenuItem1TextPtr   ; Text pointer
-    dc.l    0                   ; No drawing when clicked
-    dc.b    'Q'                 ; Shortcut Amiga-Q
+vFileQuitMenuItem:
+    dc.l    0                       ; Next Menu Entry
+    dc.w    0,0,90,10               ; X/Y/W/H
+    dc.w    %10011111               ; Mode Flag
+    dc.l    0                       ; No Connection
+    dc.l    vFileQuitMenuItemText   ; Text pointer
+    dc.l    0                       ; No drawing when clicked
+    dc.b    'Q'                     ; Shortcut Amiga-Q
     even
-    dc.l    0                   ; No Submenu
-    dc.w    0                   ; Next Select
+    dc.l    0                       ; No Submenu
+    dc.w    0                       ; Next Select
 
     even
-vMenuItem1TextPtr: 
-    dc.b    0,1                 ; Colours
-    dc.b    0                   ; Mode: Overwrite
+vFileQuitMenuItemText: 
+    dc.b    0,1                     ; Colours
+    dc.b    0                       ; Mode: Overwrite
     even
-    dc.w    5,3                 ; X/Y Position
-    dc.l    0                   ; Charset
-    dc.l    vMenuItem1StrPtr    ; String pointer
+    dc.w    5,3                     ; X/Y Position
+    dc.l    0                       ; Charset
+    dc.l    vFileQuitMenuItemStr    ; String pointer
     dc.b    0
 
     even
-vMenuItem1StrPtr:
-    dc.b    " Quit",0
+vFileQuitMenuItemStr:
+    dc.b    "Quit",0
+
+    even
+vSoundCheckboxGadget:
+    dc.l    0                       ; Next Gadget
+    dc.w    40,50                   ; X/Y Position
+    dc.w    32,13                   ; Hitbox W/H
+    dc.w    4                       ; Flags: Image | Invert
+    dc.w    $102                    ; Activation Flags ToggleSelect/GadgetImmediate
+    dc.w    1                       ; Type: Boolean
+    dc.l    vCheckboxOnImage        ; Gadget Image
+    dc.l    0                       ; No new gadget
+    dc.l    vSoundCheckboxText      ; Text
+    dc.l    0                       ; No Exclude
+    dc.l    0                       ; No Special Info
+    dc.w    1                       ; Gadget ID
+    dc.l    0                       ; User Data
+
+    even
+vSoundCheckboxText: 
+    dc.b    0,1                     ; Colours
+    dc.b    0                       ; Mode: Overwrite
+    even
+    dc.w    -8,-14                  ; X/Y Position
+    dc.l    0                       ; Charset
+    dc.l    vSoundCheckboxStr       ; String pointer
+    dc.l    0
+
+    even
+vSoundCheckboxStr:
+    dc.b    "Sound",0
+
+    even
+vCheckboxOnImage:
+    dc.w 0,0                        ; No offset
+    dc.w 32,13                      ; 32x13 pixels
+    dc.w 1                          ; Mode 1
+    dc.l vCheckboxOnImageData       ; Pointer to the data
+    dc.b 2                          ; FG Red
+    dc.b 1                          ; BG white
+    dc.l 0                          ; Nothing else
+                        
+    even
+vCheckboxOnImageData:
+    dc.l %00000000000000000000000000000000 
+    dc.l %00000000011100000000000000000000 
+    dc.l %00000000111110000011101001000000 
+    dc.l %00000000111110000010101101000000 
+    dc.l %00000000011110000010101011000000 
+    dc.l %00000000000111000011101001000000 
+    dc.l %00000000000011100000000000000000 
+    dc.l %00000000000001110000000000000000 
+    dc.l %00000000000111111111100000000000 
+    dc.l %00000000001111111111110000000000 
+    dc.l %00000000001111111111110000000000 
+    dc.l %00000000000110000001100000000000 
+    dc.l %00000000000000000000000000000000
+
+    even
+vCheckboxOffImage:
+    dc.w 0,0                        ; No offset
+    dc.w 32,13                      ; 32x13 pixels
+    dc.w 1                          ; Mode 1
+    dc.l vCheckboxOffImageData      ; Pointer to the data
+    dc.b 2                          ; BG red
+    dc.b 1                          ; FG white
+    dc.l 0                          ; Nothing else
+
+    even
+vCheckboxOffImageData:
+    dc.l %00000000000000000000000000000000 
+    dc.l %00000000000000000000111000000000 
+    dc.l %00011101110111000001111100000000 
+    dc.l %00010101000100000001111100000000 
+    dc.l %00010101100110000001111000000000 
+    dc.l %00011101000100000011100000000000 
+    dc.l %00000000000000000111000000000000 
+    dc.l %00000000000000001110000000000000 
+    dc.l %00000000000111111111100000000000 
+    dc.l %00000000001111111111110000000000 
+    dc.l %00000000001111111111110000000000 
+    dc.l %00000000000110000001100000000000 
+    dc.l %00000000000000000000000000000000
 
 ;-------------------------------------------------------------------------------
     section bss
@@ -347,6 +446,7 @@ EXEC_CLOSE_LIB          equ -414
 INTU_CLEAR_MENU_STRIP   equ -54
 INTU_CLOSE_SCREEN       equ -66
 INTU_CLOSE_WINDOW       equ -72
+INTU_DRAW_IMAGE         equ -114
 INTU_OPEN_SCREEN        equ -198
 INTU_OPEN_WINDOW        equ -204
 INTU_PRINT_ITEXT        equ -216
