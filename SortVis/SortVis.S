@@ -13,17 +13,70 @@
 ;-------------------------------------------------------------------------------
 
 main:
+_main_move_images:
+    ; Allocate chip ram for On Switch
+    move.l  #IMG_SIZE,-(sp)
+    move.l  #MEMF_CHIP,-(sp)
+    jsr     exec_alloc_mem
+    addq.l  #8,sp
+    move.l  d0,vSwitchOnImageDataChipPtr
+    ; Setup Copy Data
+    move.l  #12,d0
+    movea.l #vSwitchOnImageData,a0 
+    movea.l vSwitchOnImageDataChipPtr,a1
+_main_copy_switch_on_data_next:
+    move.l (a0)+,(a1)+
+    dbra    d0,_main_copy_switch_on_data_next
+    ; Update image struct
+    move.l  vSwitchOnImageDataChipPtr,vSwitchOnImageDataPtr
+
+    ; Allocate chip ram for Off Switch
+    move.l  #IMG_SIZE,-(sp)
+    move.l  #MEMF_CHIP,-(sp)
+    jsr     exec_alloc_mem
+    addq.l  #8,sp
+    move.l  d0,vSwitchOffImageDataChipPtr
+    ; Setup Copy Data
+    move.l  #12,d0
+    movea.l #vSwitchOffImageData,a0 
+    movea.l vSwitchOffImageDataChipPtr,a1
+_main_copy_switch_off_data_next:
+    move.l (a0)+,(a1)+
+    dbra    d0,_main_copy_switch_off_data_next
+    ; Update image struct
+    move.l  vSwitchOffImageDataChipPtr,vSwitchOffImageDataPtr
+
+_main_setup:
     move.w  #FALSE,vMainDone
     ; Open Intuition Lib
     pea     vIntuLibNameStr
     jsr     exec_open_lib
     addq.l  #4,sp
     move.l  d0,vIntuBase
-    ; Open Screen and Intu
-    jsr     intu_open_screen
+    ; Open Screen
+    jsr     intu_open_workbench
+    ; Open Window
     jsr     intu_open_window
+    ; Set menu
     jsr     intu_set_menu_strip
+    ; Get user port
     jsr     intu_get_user_port_handle
+    ; Get rast port
+    jsr     intu_get_rast_port 
+    move.l  d0,vRastPortPtr
+    ; Draw Image
+    pea     vSwitchOnImage
+    move.l  #20,-(sp)
+    move.l  #20,-(sp)
+    jsr     intu_draw_image
+    add.l   #12,sp
+    ; Some Text
+    pea     vRequesterText
+    move.l  #25,-(sp)
+    move.l  #35,-(sp)
+    jsr     intu_print_itext
+    add.l   #12,sp
+
 _main_loop:
     move.l  vUserPortPtr,-(sp)
     jsr     exec_get_msg
@@ -36,9 +89,10 @@ _main_loop:
     jmp     _main_loop
 _main_close:
     jsr     intu_clear_menu_strip
-    jsr     intu_close_screen
+    jsr     intu_close_window
+    ;jsr     intu_close_workbench
     ; Close Intuition Lib
-    lea     vIntuBase,a1
+    move.l  vIntuBase,-(sp)
     jsr     exec_close_lib
     addq.l  #4,sp
     ; Close Application
@@ -51,10 +105,51 @@ message_handler:
     beq     _message_handler_done
     movea.l vIntuMsgPtr,a0
     move.l  20(a0),d6
+_message_handler_check_window_close:
     cmpi.l  #IDCMP_CLOSEWINDOW,d6
-    move.w  #TRUE,vMainDone
-    beq     _message_handler_done
+    bne     _message_handler_check_menu_pick
+    jsr     message_handler_window_close
+    jmp     _message_handler_done
+_message_handler_check_menu_pick:
+    cmpi.l  #IDCMP_MENUPICK,d6
+    bne     _message_handler_done
+    jsr     message_handler_menu_pick
+    jmp     _message_handler_done
 _message_handler_done: 
+    rts
+
+message_handler_window_close:
+    move.w  #TRUE,vMainDone
+    rts
+
+message_handler_menu_pick:
+    ; Get value
+    move.w  24(a0),d7
+    ; Right click and let go
+    cmpi.w  #$FFFF,d7
+    beq     _message_handler_menu_click_done
+    ; Get menu, title, item and submenu
+    ; Title
+    clr.l   d6
+    move.w  d7,d6   
+    andi.l  #$0000001F,d6
+    ; item
+    clr.l   d5
+    move.w  d7,d5   
+    lsr     #5,d5
+    andi.l  #$0000003F,d5
+    ; sub menu
+    move.w  d7,d4   
+    clr.l   d4
+    lsr     #8,d4
+    lsr     #3,d4
+    andi.l  #$0000001F,d4
+    ; Check for file menu
+    cmpi.w  #1,d7
+_message_handler_menu_click_done:
+    rts
+
+message_handler_file_menu:
     rts
 
 ; Exec Routines ----------------------------------------------------------------
@@ -77,6 +172,25 @@ exec_get_msg:
     jsr     EXEC_GET_MSG(a6)
     rts
 
+;   move.l  #mem_size,-(sp)
+;   move.l  type,-(sp)
+;   jsr     exec_alloc_mem
+;   addq.l  #8,sp
+;   move.l  d0,voutputptr
+exec_alloc_mem:
+    move.l  4(sp),d1 
+    move.l  8(sp),d0
+    movea.l EXEC_BASE,a6
+    jsr     EXEC_ALLOC_MEM(a6)
+    rts
+
+;   move.l  address,-(sp) ; or pea
+;   move.l  #size,-(sp)
+;   jsr     exec_free_mem
+;   addq.l  #8,sp
+exec_free_mem:
+    rts
+
 ; Intuition Routines -----------------------------------------------------------
 
 intu_open_screen:
@@ -93,9 +207,9 @@ intu_close_screen:
     rts
 
 intu_open_window:
-    move.l  vIntuBase,a6
-    move.l  vScreenPtr,vWindowDef_ScreenPtr
+    move.l  vWBScreenPtr,vWindowDef_ScreenPtr
     lea     vWindowDef,a0
+    move.l  vIntuBase,a6
     jsr     INTU_OPEN_WINDOW(a6)
     move.l  d0,vWindowPtr
     rts
@@ -141,8 +255,8 @@ intu_clear_menu_strip:
     rts
 
 intu_get_rast_port:
-    movea.l vWindowPtr,a0
-    movea.l  50(a0),a0
+    movea.l  vWindowPtr,a0
+    move.l  50(a0),d0
     rts
 
 ; Print some text
@@ -153,7 +267,7 @@ intu_get_rast_port:
 ;    jsr     intu_print_itext
 ;    add.l   #12,sp
 intu_print_itext:
-    jsr     intu_get_rast_port
+    movea.l vRastPortPtr,a0
     movea.l vIntuBase,a6
     movea.l 12(sp),a1           ; Text struct pointer
     move.l  8(sp),d0            ; X
@@ -163,20 +277,41 @@ intu_print_itext:
 
 ;   Usage
 ;       pea     ImageStruct
-;       move.w  X,-(sp)
-;       move.w  Y,-(sp)
+;       move.l  X,-(sp)
+;       move.l  Y,-(sp)
 ;       jsr     intu_draw_image
 ;       add.l  #12,sp
 intu_draw_image:
-    jsr     intu_get_rast_port  ; a0
-    movea.l 12(sp),a1            ; image struct
-    movea.l vIntuBase,a6        ; intu
+    move.l  vRastPortPtr,a0        ; Rast Port
+    move.l  12(sp),a1           ; image struct
     move.l  8(sp),d0            ; X
     move.l  4(sp),d1            ; Y
+    movea.l vIntuBase,a6        ; intu
     jsr     INTU_DRAW_IMAGE(a6)
     rts
 
+intu_open_workbench:
+    move.l  vIntuBase,a6
+    jsr     INTU_OPEN_WORKBENCH(a6)
+    move.l  d0,vWBScreenPtr
+    rts
 
+intu_close_workbench:
+    move.l  vIntuBase,a6
+    jsr     INTU_CLOSE_WORKBENCH(a6)
+    rts
+
+;   pea     vWindowPtr
+;   jsr     intu_viewport_address
+;   addq.l  #4,sp
+;   move.l  d0,vViewportPtr
+intu_viewport_address:
+    movea.l 4(sp),a0
+    movea.l vIntuBase,a6
+    jsr     INTU_VIEWPORT_ADDRESS(a6)
+    rts
+
+    
 ;-------------------------------------------------------------------------------
     section data
 ;-------------------------------------------------------------------------------
@@ -198,9 +333,9 @@ vWindowTitleStr:
 vScreenDef:
 vScreenDef_X:           dc.w    0
 vScreenDef_Y:           dc.w    0
-vScreenDef_W:           dc.w    320 
+vScreenDef_W:           dc.w    640 
 vScreenDef_H:           dc.w    200
-vScreenDef_Depth:       dc.w    4 
+vScreenDef_Depth:       dc.w    4
 vScreenDef_DetailPen:   dc.b    0
 vScreenDef_BlockPen:    dc.b    1
 vScreenDef_ViewMode:    dc.w    2
@@ -216,8 +351,8 @@ vScreenDef_Bitmap:      dc.l    0
 vWindowDef: 
 vWindowDef_X:           dc.w    10
 vWindowDef_Y:           dc.w    10
-vWindowDef_W:           dc.w    200
-vWindowDef_H:           dc.w    150
+vWindowDef_W:           dc.w    320
+vWindowDef_H:           dc.w    100
 vWindowDef_FGColour:    dc.b    1
 vWindowDef_BGColour:    dc.b    3
 vWindowDef_IDCMP:       dc.l    $200
@@ -229,8 +364,8 @@ vWindowDef_ScreenPtr:   dc.l    0
 vWindowDef_Bitmap:      dc.l    0
 vWindowDef_MinW:        dc.w    100 
 vWindowDef_MinH:        dc.w    100
-vWindowDef_MaxW:        dc.w    320
-vWindowDef_MaxH:        dc.w    200
+vWindowDef_MaxW:        dc.w    640
+vWindowDef_MaxH:        dc.w    256
 vWindowDef_ScreenType:  dc.w    15
 
 ; Requester --------------------------------------------------------------------
@@ -241,7 +376,7 @@ vRequesterText:
     dc.b    0       ; BG Colour
     dc.b    0       ; Normal text representation
     even
-    dc.w    10,10   ; X/Y pos
+    dc.w    0,0     ; X/Y pos
     dc.l    0       ; Charset
     dc.l    vRequesterTextStr
     dc.l    0
@@ -300,7 +435,7 @@ vFileMenuStr:
 vFileQuitMenuItem:
     dc.l    0                       ; Next Menu Entry
     dc.w    0,0,90,10               ; X/Y/W/H
-    dc.w    %10011111               ; Mode Flag
+    dc.w    %010010110              ; Mode Flag
     dc.l    0                       ; No Connection
     dc.l    vFileQuitMenuItemText   ; Text pointer
     dc.l    0                       ; No drawing when clicked
@@ -328,11 +463,11 @@ vSoundCheckboxGadget:
     dc.l    0                       ; Next Gadget
     dc.w    40,50                   ; X/Y Position
     dc.w    32,13                   ; Hitbox W/H
-    dc.w    4                       ; Flags: Image | Invert
+    dc.w    6                       ; Flags: Image | Invert
     dc.w    $102                    ; Activation Flags ToggleSelect/GadgetImmediate
     dc.w    1                       ; Type: Boolean
-    dc.l    vCheckboxOnImage        ; Gadget Image
-    dc.l    0                       ; No new gadget
+    dc.l    vSwitchOnImage          ; Gadget Image
+    dc.l    vSwitchOffImage         ; No new gadget
     dc.l    vSoundCheckboxText      ; Text
     dc.l    0                       ; No Exclude
     dc.l    0                       ; No Special Info
@@ -344,7 +479,7 @@ vSoundCheckboxText:
     dc.b    0,1                     ; Colours
     dc.b    0                       ; Mode: Overwrite
     even
-    dc.w    -8,-14                  ; X/Y Position
+    dc.w    -8,14                   ; X/Y Position
     dc.l    0                       ; Charset
     dc.l    vSoundCheckboxStr       ; String pointer
     dc.l    0
@@ -354,17 +489,20 @@ vSoundCheckboxStr:
     dc.b    "Sound",0
 
     even
-vCheckboxOnImage:
-    dc.w 0,0                        ; No offset
-    dc.w 32,13                      ; 32x13 pixels
-    dc.w 1                          ; Mode 1
-    dc.l vCheckboxOnImageData       ; Pointer to the data
-    dc.b 2                          ; FG Red
-    dc.b 1                          ; BG white
-    dc.l 0                          ; Nothing else
+vSwitchOnImage:
+    dc.w 0
+    dc.w 0                  ; No offset
+    dc.w 32
+    dc.w 13                 ; 32x13 pixels
+    dc.w 1                  ; Bitplanes
+vSwitchOnImageDataPtr:
+    dc.l vSwitchOnImageData ; Pointer to the data
+    dc.b 1                  ; PlanePick
+    dc.b 0                  ; PlaneOnOff
+    dc.l 0                  ; Nothing else
                         
     even
-vCheckboxOnImageData:
+vSwitchOnImageData:
     dc.l %00000000000000000000000000000000 
     dc.l %00000000011100000000000000000000 
     dc.l %00000000111110000011101001000000 
@@ -380,17 +518,20 @@ vCheckboxOnImageData:
     dc.l %00000000000000000000000000000000
 
     even
-vCheckboxOffImage:
-    dc.w 0,0                        ; No offset
-    dc.w 32,13                      ; 32x13 pixels
-    dc.w 1                          ; Mode 1
-    dc.l vCheckboxOffImageData      ; Pointer to the data
-    dc.b 2                          ; BG red
-    dc.b 1                          ; FG white
-    dc.l 0                          ; Nothing else
+vSwitchOffImage:
+    dc.w 0
+    dc.w 0                      ; No offset
+    dc.w 32
+    dc.w 13                     ; 32x13 pixels
+    dc.w 1                      ; Mode 1
+vSwitchOffImageDataPtr:
+    dc.l vSwitchOffImageData    ; Pointer to the data
+    dc.b 1                      ; PlanePick
+    dc.b 0                      ; PlaneOnOff
+    dc.l 0                      ; Nothing else
 
     even
-vCheckboxOffImageData:
+vSwitchOffImageData:
     dc.l %00000000000000000000000000000000 
     dc.l %00000000000000000000111000000000 
     dc.l %00011101110111000001111100000000 
@@ -408,23 +549,18 @@ vCheckboxOffImageData:
 ;-------------------------------------------------------------------------------
     section bss
 ;-------------------------------------------------------------------------------
-    even
 vIntuBase:          ds.l    1
-
-    even
 vScreenPtr:         ds.l    1
-
-    even
 vWindowPtr:         ds.l    1
-
-    even
 vUserPortPtr:       ds.l    1
-
-    even
 vIntuMsgPtr:        ds.l    1
-
-    even
 vMainDone:          ds.w    1
+vWBScreenPtr:       ds.l    1
+vViewportPtr:       ds.l    1
+vRastPortPtr:       ds.l    1
+
+vSwitchOnImageDataChipPtr:  ds.l    1
+vSwitchOffImageDataChipPtr: ds.l    1
 
 ;-------------------------------------------------------------------------------
 ;   Constants
@@ -438,6 +574,9 @@ FALSE                   equ 0
 ; Exec Library
 
 EXEC_BASE               equ 4
+EXEC_ALLOC_MEM          equ -198 ; byteSize     d0, requirements d1 
+EXEC_ALLOC_ABS          equ -204 ; byteSize     d0, location     a1
+EXEC_FREE_MEM           equ -210 ; memoryBlock  a1, byteSize     d0 
 EXEC_GET_MSG            equ -372
 EXEC_OPEN_LIB           equ -408
 EXEC_CLOSE_LIB          equ -414
@@ -446,11 +585,14 @@ EXEC_CLOSE_LIB          equ -414
 INTU_CLEAR_MENU_STRIP   equ -54
 INTU_CLOSE_SCREEN       equ -66
 INTU_CLOSE_WINDOW       equ -72
+INTU_CLOSE_WORKBENCH    equ -78
 INTU_DRAW_IMAGE         equ -114
 INTU_OPEN_SCREEN        equ -198
 INTU_OPEN_WINDOW        equ -204
+INTU_OPEN_WORKBENCH     equ -210
 INTU_PRINT_ITEXT        equ -216
 INTU_SET_MENU_STRIP     equ -264
+INTU_VIEWPORT_ADDRESS   equ -300
 INTU_AUTO_REQUEST       equ -348
 
 ; IDCMP
@@ -476,6 +618,13 @@ IDCMP_WBENCHMESSAGE     equ $020000
 IDCMP_ACTIVEWINDOW      equ $040000
 IDCMP_INACTlVEWINDOW    equ $080000
 IDCMP_DELTAMOVE         equ $100000
+
+; Misc
+
+CHIPMEM_LIMIT           equ $080000
+MEMF_CHIP               equ 2
+IMG_SIZE                equ 52
+
 ;-------------------------------------------------------------------------------
     end
 ;-------------------------------------------------------------------------------
