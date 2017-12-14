@@ -13,47 +13,14 @@
 ;-------------------------------------------------------------------------------
 
 main:
-_main_move_images:
-    ; Allocate chip ram for On Switch
-    move.l  #IMG_SIZE,-(sp)
-    move.l  #MEMF_CHIP,-(sp)
-    jsr     exec_alloc_mem
-    addq.l  #8,sp
-    move.l  d0,vSwitchOnImageDataChipPtr
-    ; Setup Copy Data
-    move.l  #12,d0
-    movea.l #vSwitchOnImageData,a0 
-    movea.l vSwitchOnImageDataChipPtr,a1
-_main_copy_switch_on_data_next:
-    move.l (a0)+,(a1)+
-    dbra    d0,_main_copy_switch_on_data_next
-    ; Update image struct
-    move.l  vSwitchOnImageDataChipPtr,vSwitchOnImageDataPtr
-
-    ; Allocate chip ram for Off Switch
-    move.l  #IMG_SIZE,-(sp)
-    move.l  #MEMF_CHIP,-(sp)
-    jsr     exec_alloc_mem
-    addq.l  #8,sp
-    move.l  d0,vSwitchOffImageDataChipPtr
-    ; Setup Copy Data
-    move.l  #12,d0
-    movea.l #vSwitchOffImageData,a0 
-    movea.l vSwitchOffImageDataChipPtr,a1
-_main_copy_switch_off_data_next:
-    move.l (a0)+,(a1)+
-    dbra    d0,_main_copy_switch_off_data_next
-    ; Update image struct
-    move.l  vSwitchOffImageDataChipPtr,vSwitchOffImageDataPtr
-
-_main_setup:
+    jsr     copy_images_to_chip_ram
     move.w  #FALSE,vMainDone
     ; Open Intuition Lib
     pea     vIntuLibNameStr
     jsr     exec_open_lib
     addq.l  #4,sp
     move.l  d0,vIntuBase
-    ; Open Screen
+    ; Open WBScreen
     jsr     intu_open_workbench
     ; Open Window
     jsr     intu_open_window
@@ -64,35 +31,30 @@ _main_setup:
     ; Get rast port
     jsr     intu_get_rast_port 
     move.l  d0,vRastPortPtr
-    ; Draw Image
-    pea     vSwitchOnImage
-    move.l  #20,-(sp)
-    move.l  #20,-(sp)
-    jsr     intu_draw_image
+    ; Draw border
+    pea     vSoundBorder
+    move.l  #SOUND_GADGET_X,-(sp)
+    move.l  #SOUND_GADGET_Y,-(sp)
+    jsr     intu_draw_border
     add.l   #12,sp
-    ; Some Text
-    pea     vRequesterText
-    move.l  #25,-(sp)
-    move.l  #35,-(sp)
-    jsr     intu_print_itext
-    add.l   #12,sp
-
 _main_loop:
+    ; Get Messages
     move.l  vUserPortPtr,-(sp)
     jsr     exec_get_msg
     addq.l  #4,sp
     move.l  d0,vIntuMsgPtr
-
+    ; Handle Messages
     jsr     message_handler
+    ; Should close?
     cmpi.w  #TRUE,vMainDone
     beq     _main_close
     jmp     _main_loop
 _main_close:
     jsr     intu_clear_menu_strip
     jsr     intu_close_window
-    ;jsr     intu_close_workbench
     ; Close Intuition Lib
     move.l  vIntuBase,-(sp)
+    jsr     free_resources
     jsr     exec_close_lib
     addq.l  #4,sp
     ; Close Application
@@ -152,6 +114,53 @@ _message_handler_menu_click_done:
 message_handler_file_menu:
     rts
 
+copy_images_to_chip_ram:
+    ; Allocate chip ram for On Switch
+    move.l  #IMG_SIZE,-(sp)
+    move.l  #MEMF_CHIP,-(sp)
+    jsr     exec_alloc_mem
+    addq.l  #8,sp
+    move.l  d0,vSwitchOnImageDataChipPtr
+    ; Setup Copy Data
+    move.l  #12,d0
+    movea.l #vSwitchOnImageData,a0 
+    movea.l vSwitchOnImageDataChipPtr,a1
+_copy_switch_on_data:
+    move.l (a0)+,(a1)+
+    dbra    d0,_copy_switch_on_data
+    ; Update image struct
+    move.l  vSwitchOnImageDataChipPtr,vSwitchOnImageDataPtr
+    ; Allocate chip ram for Off Switch
+    move.l  #IMG_SIZE,-(sp)
+    move.l  #MEMF_CHIP,-(sp)
+    jsr     exec_alloc_mem
+    addq.l  #8,sp
+    move.l  d0,vSwitchOffImageDataChipPtr
+    ; Setup Copy Data
+    move.l  #12,d0
+    movea.l #vSwitchOffImageData,a0 
+    movea.l vSwitchOffImageDataChipPtr,a1
+_copy_switch_off_data:
+    move.l (a0)+,(a1)+
+    dbra    d0,_copy_switch_off_data
+    ; Update image struct
+    move.l  vSwitchOffImageDataChipPtr,vSwitchOffImageDataPtr
+    rts
+
+free_resources:
+    ; Free Switch On 
+    move.l  vSwitchOnImageDataChipPtr,-(sp) 
+    move.l  #IMG_SIZE,-(sp)
+    jsr     exec_free_mem
+    addq.l  #8,sp
+    ; Free Switch Off
+    move.l  vSwitchOffImageDataChipPtr,-(sp) 
+    move.l  #IMG_SIZE,-(sp)
+    jsr     exec_free_mem
+    addq.l  #8,sp
+    ; Ok
+    rts
+
 ; Exec Routines ----------------------------------------------------------------
 
 exec_open_lib:
@@ -189,20 +198,30 @@ exec_alloc_mem:
 ;   jsr     exec_free_mem
 ;   addq.l  #8,sp
 exec_free_mem:
+    move.l  8(sp),a1
+    move.l  4(sp),d0
+    movea.l EXEC_BASE,a6
+    jsr     EXEC_FREE_MEM(a6)
     rts
 
 ; Intuition Routines -----------------------------------------------------------
 
+;   pea     ScreenDefinition
+;   jsr     intu_open_screen
+;   addq.l  #4,sp
+;   move.l  d0,vScreenPtr
 intu_open_screen:
+    movea.l 4(sp),a0
     move.l  vIntuBase,a6
-    lea     vScreenDef,a0
     jsr     INTU_OPEN_SCREEN(a6)
-    move.l  d0,vScreenPtr
     rts
 
+;   pea     vScreenPtr
+;   jsr     intu_close_screen
+;   addq.l  #4,sp
 intu_close_screen:
+    move.l  4(sp),a0
     move.l  vIntuBase,a6
-    lea     vScreenPtr,a0
     jsr     INTU_CLOSE_SCREEN(a6)
     rts
 
@@ -227,12 +246,17 @@ intu_close_window:
 
 ; Show requester
 ; Usage
+;   pea     RequestText
+;   pea     LeftText
+;   pea     RightText
+;   pea     WindowPointer
 ;   jsr     intu_auto_request
+;   add.l   #16,sp
 intu_auto_request:
-    move.l  vWindowPtr,a0
-    lea     vRequesterText,a1
-    lea     vRequesterLeftText,a2
-    lea     vRequesterRightText,a3
+    movea.l  4(sp),a0
+    movea.l 12(sp),a1
+    movea.l 16(sp),a2
+    movea.l 8(sp),a3
     move.l  #0,d0
     move.l  #0,d1
     move.l  #50,d2
@@ -311,53 +335,48 @@ intu_viewport_address:
     jsr     INTU_VIEWPORT_ADDRESS(a6)
     rts
 
-    
+;   pea     vBorderStruct
+;   move.l  #X,-(sp)
+;   move.l  #Y,-(sp)
+;   jsr     intu_draw_border
+;   add.l   #12,sp
+intu_draw_border:
+    movea.l vRastPortPtr,a0
+    movea.l 12(sp),a1
+    move.l  8(sp),d0
+    move.l  4(sp),d1
+    movea.l vIntuBase,a6
+    jsr     INTU_DRAW_BORDER(a6)
+    rts
+
 ;-------------------------------------------------------------------------------
     section data
 ;-------------------------------------------------------------------------------
+
+; Strings ----------------------------------------------------------------------
+
     even
 vIntuLibNameStr:  
     dc.b    "intuition.library",0
 
     even
-vScreenTitleStr:       
-    dc.b    "Octronic SortVis v1.0",0 
-
-    even
 vWindowTitleStr:       
-    dc.b    "Setup Visualisation",0
+    dc.b    "Octronic SortVis v1",0
 
-; Screen Definition ------------------------------------------------------------
-
-    even
-vScreenDef:
-vScreenDef_X:           dc.w    0
-vScreenDef_Y:           dc.w    0
-vScreenDef_W:           dc.w    640 
-vScreenDef_H:           dc.w    200
-vScreenDef_Depth:       dc.w    4
-vScreenDef_DetailPen:   dc.b    0
-vScreenDef_BlockPen:    dc.b    1
-vScreenDef_ViewMode:    dc.w    2
-vScreenDef_ScreenType:  dc.w    15
-vScreenDef_Font:        dc.l    0
-vScreenDef_Title:       dc.l    vScreenTitleStr
-vScreenDef_Gadgets:     dc.l    0
-vScreenDef_Bitmap:      dc.l    0
 
 ; Window Definition ------------------------------------------------------------
 
     even
 vWindowDef: 
-vWindowDef_X:           dc.w    10
-vWindowDef_Y:           dc.w    10
-vWindowDef_W:           dc.w    320
-vWindowDef_H:           dc.w    100
+vWindowDef_X:           dc.w    20
+vWindowDef_Y:           dc.w    20
+vWindowDef_W:           dc.w    600
+vWindowDef_H:           dc.w    220
 vWindowDef_FGColour:    dc.b    1
 vWindowDef_BGColour:    dc.b    3
 vWindowDef_IDCMP:       dc.l    $200
 vWindowDef_Type:        dc.l    $100f
-vWindowDef_Gadget:      dc.l    vSoundCheckboxGadget
+vWindowDef_Gadget:      dc.l    vSoundGadget
 vWindowDef_Graphics:    dc.l    0
 vWindowDef_Title:       dc.l    vWindowTitleStr
 vWindowDef_ScreenPtr:   dc.l    0
@@ -367,53 +386,6 @@ vWindowDef_MinH:        dc.w    100
 vWindowDef_MaxW:        dc.w    640
 vWindowDef_MaxH:        dc.w    256
 vWindowDef_ScreenType:  dc.w    15
-
-; Requester --------------------------------------------------------------------
-
-    even
-vRequesterText:  
-    dc.b    2       ; FG Colour
-    dc.b    0       ; BG Colour
-    dc.b    0       ; Normal text representation
-    even
-    dc.w    0,0     ; X/Y pos
-    dc.l    0       ; Charset
-    dc.l    vRequesterTextStr
-    dc.l    0
-
-    even
-vRequesterTextStr:  
-    dc.b    "Hi, This is a requester!",0
-
-    even
-vRequesterLeftText:     
-    dc.b    2       ; FG Colour
-    dc.b    0       ; BG Colour
-    dc.b    0       ; Normal text representation
-    even
-    dc.w    5,3     ; X/y pos
-    dc.l    0       ; Charset
-    dc.l    vRequesterLeftStr
-    dc.l    0
-
-    even
-vRequesterLeftStr:     
-    dc.b    "Left Text",0
-
-    even
-vRequesterRightText:
-    dc.b    2   ; FG Colour
-    dc.b    0   ; BG Colour
-    dc.b    0   ; Normal text representation
-    even
-    dc.w    5,3  ; X/Y pos
-    dc.l    0   ; Charset
-    dc.l    vRequesterRightStr
-    dc.l    0
-
-    even
-vRequesterRightStr:
-    dc.b    "Right Text",0
 
 ; File Menu --------------------------------------------------------------------
 
@@ -459,33 +431,35 @@ vFileQuitMenuItemStr:
     dc.b    "Quit",0
 
     even
-vSoundCheckboxGadget:
-    dc.l    0                       ; Next Gadget
-    dc.w    40,50                   ; X/Y Position
-    dc.w    32,13                   ; Hitbox W/H
+vSoundGadget:
+    dc.l    vNumElementsGadget      ; Next Gadget
+    dc.w    SOUND_GADGET_X
+    dc.w    SOUND_GADGET_Y          ; X/Y Position
+    dc.w    SOUND_GADGET_W
+    dc.w    SOUND_GADGET_H          ; Hitbox W/H
     dc.w    6                       ; Flags: Image | Invert
     dc.w    $102                    ; Activation Flags ToggleSelect/GadgetImmediate
     dc.w    1                       ; Type: Boolean
     dc.l    vSwitchOnImage          ; Gadget Image
     dc.l    vSwitchOffImage         ; No new gadget
-    dc.l    vSoundCheckboxText      ; Text
+    dc.l    vSoundText              ; Text
     dc.l    0                       ; No Exclude
     dc.l    0                       ; No Special Info
     dc.w    1                       ; Gadget ID
     dc.l    0                       ; User Data
 
     even
-vSoundCheckboxText: 
-    dc.b    0,1                     ; Colours
+vSoundText: 
+    dc.b    1,2                     ; Colours
     dc.b    0                       ; Mode: Overwrite
     even
-    dc.w    -8,14                   ; X/Y Position
+    dc.w    32,4                    ; X/Y Position
     dc.l    0                       ; Charset
-    dc.l    vSoundCheckboxStr       ; String pointer
+    dc.l    vSoundStr               ; String pointer
     dc.l    0
 
     even
-vSoundCheckboxStr:
+vSoundStr:
     dc.b    "Sound",0
 
     even
@@ -546,21 +520,94 @@ vSwitchOffImageData:
     dc.l %00000000000110000001100000000000 
     dc.l %00000000000000000000000000000000
 
+    even
+vSoundBorder:
+    dc.w    0       ; Horizontal Distance
+    dc.w    0       ; Vertical Distance
+    dc.b    1       ; black Frame
+    dc.b    0       ; Background (unused)
+    dc.b    0       ; Mode: JAM1
+    dc.b    5       ; 5 X/Y pairs used together
+    dc.l    vSoundBorderCoords
+    dc.l    0       ; No more structs
+
+    even
+vSoundBorderCoords:
+    dc.w     -2, -2
+    dc.w    SOUND_GADGET_W+2, -2
+    dc.w    SOUND_GADGET_W+2, SOUND_GADGET_H+2
+    dc.w     -2, SOUND_GADGET_H+2
+    dc.w     -2, -2
+
+    even
+vNumElementsGadget:
+    dc.l    0                       ; * to next gadget 
+    dc.w    NUM_ELEMENTS_X          ; X,Y,W,H
+    dc.w    NUM_ELEMENTS_Y          
+    dc.w    NUM_ELEMENTS_W          
+    dc.w    NUM_ELEMENTS_H          
+    dc.w    0                       ; Flags: Normal
+    dc.w    $802                    ; Activation $802 for long int
+    dc.w    4                       ; Type: String gadget
+    dc.l    vNumElementsBorder      ; Pointer to border
+    dc.l    0                       ; No drawing
+    dc.l    0                       ; No Text
+    dc.l    0                       ; No exclude
+    dc.l    vNumElementsStrInfo     ; * to StringInfo
+    dc.w    2                       ; Gadget ID
+    dc.l    0                       ; No User Data
+
+    even
+vNumElementsBorder:
+    dc.w    0       ; Horizontal Distance
+    dc.w    0       ; Vertical Distance
+    dc.b    1       ; black Frame
+    dc.b    0       ; Background (unused)
+    dc.b    0       ; Mode: JAM1
+    dc.b    5       ; 5 X/Y pairs used together
+    dc.l    vNumElementsBorderCoords
+    dc.l    0       ; No more structs
+
+    even
+vNumElementsBorderCoords:
+    dc.w     -2, -2
+    dc.w    NUM_ELEMENTS_W+2, -2
+    dc.w    NUM_ELEMENTS_W+2, NUM_ELEMENTS_H+2
+    dc.w     -2, NUM_ELEMENTS_H+2
+    dc.w     -2, -2
+
+    even
+vNumElementsStrInfo:
+    dc.l    vNumElementsStrBuffer   ; Pointer to text buffer
+    dc.l    vNumElementsUndoBuffer  ; Pointer to undo buffer
+    dc.w    0                       ; Cursor position
+    dc.w    4                       ; Max # of chars
+    dc.w    0                       ; Output txt from this character
+    dc.w    0                       ; Char pos in undo buffer
+    dc.w    0                       ; # of chars in text buffer
+    dc.w    0                       ; # of chars visible in box 
+    dc.w    0                       ; horizontal box offset 
+    dc.w    0                       ; vertical box offset
+    dc.l    0                       ; pointer to RastPort
+    dc.l    0                       ; long with value of input (for integers)
+    dc.l    0                       ; Standard keyboard table
 ;-------------------------------------------------------------------------------
     section bss
 ;-------------------------------------------------------------------------------
-vIntuBase:          ds.l    1
-vScreenPtr:         ds.l    1
-vWindowPtr:         ds.l    1
-vUserPortPtr:       ds.l    1
-vIntuMsgPtr:        ds.l    1
-vMainDone:          ds.w    1
-vWBScreenPtr:       ds.l    1
-vViewportPtr:       ds.l    1
-vRastPortPtr:       ds.l    1
+vIntuBase:                  ds.l    1
+vWindowPtr:                 ds.l    1
+vUserPortPtr:               ds.l    1
+vIntuMsgPtr:                ds.l    1
+vMainDone:                  ds.w    1
+vWBScreenPtr:               ds.l    1
+vViewportPtr:               ds.l    1
+vRastPortPtr:               ds.l    1
 
 vSwitchOnImageDataChipPtr:  ds.l    1
 vSwitchOffImageDataChipPtr: ds.l    1
+
+vNumElementsStrBuffer:      ds.b    5
+vNumElementsUndoBuffer:     ds.b    5 
 
 ;-------------------------------------------------------------------------------
 ;   Constants
@@ -586,6 +633,7 @@ INTU_CLEAR_MENU_STRIP   equ -54
 INTU_CLOSE_SCREEN       equ -66
 INTU_CLOSE_WINDOW       equ -72
 INTU_CLOSE_WORKBENCH    equ -78
+INTU_DRAW_BORDER        equ -108
 INTU_DRAW_IMAGE         equ -114
 INTU_OPEN_SCREEN        equ -198
 INTU_OPEN_WINDOW        equ -204
@@ -624,6 +672,19 @@ IDCMP_DELTAMOVE         equ $100000
 CHIPMEM_LIMIT           equ $080000
 MEMF_CHIP               equ 2
 IMG_SIZE                equ 52
+
+
+; Layout
+SOUND_GADGET_X          equ 10
+SOUND_GADGET_Y          equ 15
+SOUND_GADGET_W          equ 80
+SOUND_GADGET_H          equ 13
+
+NUM_ELEMENTS_X          equ 100
+NUM_ELEMENTS_Y          equ 15
+NUM_ELEMENTS_W          equ 32
+NUM_ELEMENTS_H          equ 8
+
 
 ;-------------------------------------------------------------------------------
     end
