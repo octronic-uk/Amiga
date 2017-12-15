@@ -122,7 +122,8 @@ copy_images_to_chip_ram:
     addq.l  #8,sp
     move.l  d0,vSwitchOnImageDataChipPtr
     ; Setup Copy Data
-    move.l  #12,d0
+    move.l  #IMG_SIZE/4,d0
+    subq.l  #1,d0
     movea.l #vSwitchOnImageData,a0 
     movea.l vSwitchOnImageDataChipPtr,a1
 _copy_switch_on_data:
@@ -137,7 +138,8 @@ _copy_switch_on_data:
     addq.l  #8,sp
     move.l  d0,vSwitchOffImageDataChipPtr
     ; Setup Copy Data
-    move.l  #12,d0
+    move.l  #IMG_SIZE/4,d0
+    subq.l  #1,d0
     movea.l #vSwitchOffImageData,a0 
     movea.l vSwitchOffImageDataChipPtr,a1
 _copy_switch_off_data:
@@ -359,12 +361,11 @@ intu_draw_border:
 vIntuLibNameStr:  
     dc.b    "intuition.library",0
 
+; Window Definition ------------------------------------------------------------
+
     even
 vWindowTitleStr:       
     dc.b    "Octronic SortVis v1",0
-
-
-; Window Definition ------------------------------------------------------------
 
     even
 vWindowDef: 
@@ -430,6 +431,8 @@ vFileQuitMenuItemText:
 vFileQuitMenuItemStr:
     dc.b    "Quit",0
 
+; Sound Enable Gadget ----------------------------------------------------------
+
     even
 vSoundGadget:
     dc.l    vNumElementsGadget      ; Next Gadget
@@ -453,7 +456,7 @@ vSoundText:
     dc.b    1,2                     ; Colours
     dc.b    0                       ; Mode: Overwrite
     even
-    dc.w    32,4                    ; X/Y Position
+    dc.w    32,0                    ; X/Y Position
     dc.l    0                       ; Charset
     dc.l    vSoundStr               ; String pointer
     dc.l    0
@@ -466,8 +469,8 @@ vSoundStr:
 vSwitchOnImage:
     dc.w 0
     dc.w 0                  ; No offset
-    dc.w 32
-    dc.w 13                 ; 32x13 pixels
+    dc.w SOUND_ICON_W
+    dc.w SOUND_ICON_H
     dc.w 1                  ; Bitplanes
 vSwitchOnImageDataPtr:
     dc.l vSwitchOnImageData ; Pointer to the data
@@ -477,26 +480,20 @@ vSwitchOnImageDataPtr:
                         
     even
 vSwitchOnImageData:
-    dc.l %00000000000000000000000000000000 
-    dc.l %00000000011100000000000000000000 
-    dc.l %00000000111110000011101001000000 
-    dc.l %00000000111110000010101101000000 
-    dc.l %00000000011110000010101011000000 
+    dc.l %00000000001111100011101001000000 
+    dc.l %00000000011111110010101101000000 
+    dc.l %00000000001111100010101011000000 
     dc.l %00000000000111000011101001000000 
     dc.l %00000000000011100000000000000000 
-    dc.l %00000000000001110000000000000000 
     dc.l %00000000000111111111100000000000 
-    dc.l %00000000001111111111110000000000 
-    dc.l %00000000001111111111110000000000 
-    dc.l %00000000000110000001100000000000 
-    dc.l %00000000000000000000000000000000
+    dc.l %00000000011111111111111000000000 
 
     even
 vSwitchOffImage:
     dc.w 0
     dc.w 0                      ; No offset
-    dc.w 32
-    dc.w 13                     ; 32x13 pixels
+    dc.w SOUND_ICON_W 
+    dc.w SOUND_ICON_H
     dc.w 1                      ; Mode 1
 vSwitchOffImageDataPtr:
     dc.l vSwitchOffImageData    ; Pointer to the data
@@ -506,24 +503,18 @@ vSwitchOffImageDataPtr:
 
     even
 vSwitchOffImageData:
-    dc.l %00000000000000000000000000000000 
-    dc.l %00000000000000000000111000000000 
-    dc.l %00011101110111000001111100000000 
-    dc.l %00010101000100000001111100000000 
-    dc.l %00010101100110000001111000000000 
+    dc.l %00011101110111000111110000000000 
+    dc.l %00010101000100001111111000000000 
+    dc.l %00010101100110000111110000000000 
     dc.l %00011101000100000011100000000000 
     dc.l %00000000000000000111000000000000 
-    dc.l %00000000000000001110000000000000 
     dc.l %00000000000111111111100000000000 
-    dc.l %00000000001111111111110000000000 
-    dc.l %00000000001111111111110000000000 
-    dc.l %00000000000110000001100000000000 
-    dc.l %00000000000000000000000000000000
+    dc.l %00000000011111111111111000000000 
 
     even
 vSoundBorder:
-    dc.w    0       ; Horizontal Distance
-    dc.w    0       ; Vertical Distance
+    dc.w    -2       ; Horizontal Distance
+    dc.w    -2       ; Vertical Distance
     dc.b    1       ; black Frame
     dc.b    0       ; Background (unused)
     dc.b    0       ; Mode: JAM1
@@ -533,15 +524,17 @@ vSoundBorder:
 
     even
 vSoundBorderCoords:
-    dc.w     -2, -2
-    dc.w    SOUND_GADGET_W+2, -2
+    dc.w    0,0
+    dc.w    SOUND_GADGET_W+2,0 
     dc.w    SOUND_GADGET_W+2, SOUND_GADGET_H+2
-    dc.w     -2, SOUND_GADGET_H+2
-    dc.w     -2, -2
+    dc.w    0, SOUND_GADGET_H+2
+    dc.w    0, 0 
+
+; Num Elements Gadget ----------------------------------------------------------
 
     even
 vNumElementsGadget:
-    dc.l    0                       ; * to next gadget 
+    dc.l    vRunButtonGadget        ; * to next gadget 
     dc.w    NUM_ELEMENTS_X          ; X,Y,W,H
     dc.w    NUM_ELEMENTS_Y          
     dc.w    NUM_ELEMENTS_W          
@@ -551,16 +544,17 @@ vNumElementsGadget:
     dc.w    4                       ; Type: String gadget
     dc.l    vNumElementsBorder      ; Pointer to border
     dc.l    0                       ; No drawing
-    dc.l    0                       ; No Text
+    dc.l    vNumElementsText        ; No Text
     dc.l    0                       ; No exclude
     dc.l    vNumElementsStrInfo     ; * to StringInfo
     dc.w    2                       ; Gadget ID
     dc.l    0                       ; No User Data
 
+
     even
 vNumElementsBorder:
-    dc.w    0       ; Horizontal Distance
-    dc.w    0       ; Vertical Distance
+    dc.w    -2      ; Horizontal Distance
+    dc.w    -2      ; Vertical Distance
     dc.b    1       ; black Frame
     dc.b    0       ; Background (unused)
     dc.b    0       ; Mode: JAM1
@@ -570,18 +564,18 @@ vNumElementsBorder:
 
     even
 vNumElementsBorderCoords:
-    dc.w     -2, -2
-    dc.w    NUM_ELEMENTS_W+2, -2
+    dc.w    0,0 
+    dc.w    NUM_ELEMENTS_W+2, 0 
     dc.w    NUM_ELEMENTS_W+2, NUM_ELEMENTS_H+2
-    dc.w     -2, NUM_ELEMENTS_H+2
-    dc.w     -2, -2
+    dc.w    0, NUM_ELEMENTS_H+2
+    dc.w    0,0 
 
     even
 vNumElementsStrInfo:
     dc.l    vNumElementsStrBuffer   ; Pointer to text buffer
     dc.l    vNumElementsUndoBuffer  ; Pointer to undo buffer
     dc.w    0                       ; Cursor position
-    dc.w    4                       ; Max # of chars
+    dc.w    3                       ; Max # of chars
     dc.w    0                       ; Output txt from this character
     dc.w    0                       ; Char pos in undo buffer
     dc.w    0                       ; # of chars in text buffer
@@ -591,6 +585,84 @@ vNumElementsStrInfo:
     dc.l    0                       ; pointer to RastPort
     dc.l    0                       ; long with value of input (for integers)
     dc.l    0                       ; Standard keyboard table
+
+    even
+vNumElementsStrBuffer:      dc.b    '10',000
+
+    even
+vNumElementsUndoBuffer:     dc.b    '00000' 
+
+    even
+vNumElementsText: 
+    dc.b    1,2                     ; Colours
+    dc.b    0                       ; Mode: Overwrite
+    even
+    dc.w    26,0                    ; X/Y Position
+    dc.l    0                       ; Charset
+    dc.l    vNumElementsStr         ; String pointer
+    dc.l    0
+
+    even
+vNumElementsStr:
+    dc.b    "Elements to sort",0
+
+
+; Run Button Gadget ------------------------------------------------------------
+
+    even
+vRunButtonGadget:
+    dc.l    0                       ; Next Gadget
+    dc.w    RUN_BTN_GADGET_X        ; X Position
+    dc.w    RUN_BTN_GADGET_Y        ; Y Position
+    dc.w    RUN_BTN_GADGET_W        ; Hitbox W
+    dc.w    RUN_BTN_GADGET_H        ; Hitbox H
+    dc.w    $0                      ; Flags: Invert
+    dc.w    $3                      ; Activation Flags
+    dc.w    1                       ; Type: Boolean
+    dc.l    vRunButtonBorder        ; Gadget Image
+    dc.l    0                       ; No new gadget
+    dc.l    vRunButtonText          ; Text
+    dc.l    0                       ; No Exclude
+    dc.l    0                       ; No Special Info
+    dc.w    3                       ; Gadget ID
+    dc.l    0                       ; User Data
+
+    even
+vRunButtonText: 
+    dc.b    1,2                     ; Colours
+    dc.b    0                       ; Mode: Overwrite
+    even
+    dc.w    0,0                     ; X/Y Position
+    dc.l    0                       ; Charset
+    dc.l    vRunButtonStr           ; String pointer
+    dc.l    0
+
+    even
+vRunButtonStr:
+    dc.b    "Run!",0
+
+    even
+vRunButtonBorder:
+    dc.w    -2      ; Horizontal Distance
+    dc.w    -2      ; Vertical Distance
+    dc.b    1       ; black Frame
+    dc.b    0       ; Background (unused)
+    dc.b    0       ; Mode: JAM1
+    dc.b    5       ; 5 X/Y pairs used together
+    dc.l    vRunButtonBorderCoords
+    dc.l    0       ; No more structs
+
+    even
+vRunButtonBorderCoords:
+    dc.w    0,0 
+    dc.w    RUN_BTN_GADGET_W+2, 0 
+    dc.w    RUN_BTN_GADGET_W+2, RUN_BTN_GADGET_H+2
+    dc.w    0, RUN_BTN_GADGET_H+2
+    dc.w    0, 0 
+
+   
+
+
 ;-------------------------------------------------------------------------------
     section bss
 ;-------------------------------------------------------------------------------
@@ -606,8 +678,6 @@ vRastPortPtr:               ds.l    1
 vSwitchOnImageDataChipPtr:  ds.l    1
 vSwitchOffImageDataChipPtr: ds.l    1
 
-vNumElementsStrBuffer:      ds.b    5
-vNumElementsUndoBuffer:     ds.b    5 
 
 ;-------------------------------------------------------------------------------
 ;   Constants
@@ -671,19 +741,28 @@ IDCMP_DELTAMOVE         equ $100000
 
 CHIPMEM_LIMIT           equ $080000
 MEMF_CHIP               equ 2
-IMG_SIZE                equ 52
+SOUND_ICON_W            equ 32
+SOUND_ICON_H            equ 7
+IMG_SIZE                equ (SOUND_ICON_W*SOUND_ICON_H)/8
 
 
 ; Layout
 SOUND_GADGET_X          equ 10
 SOUND_GADGET_Y          equ 15
 SOUND_GADGET_W          equ 80
-SOUND_GADGET_H          equ 13
+SOUND_GADGET_H          equ 8
 
 NUM_ELEMENTS_X          equ 100
 NUM_ELEMENTS_Y          equ 15
-NUM_ELEMENTS_W          equ 32
+NUM_ELEMENTS_W          equ 160
 NUM_ELEMENTS_H          equ 8
+
+RUN_BTN_GADGET_X        equ 270
+RUN_BTN_GADGET_Y        equ 15
+RUN_BTN_GADGET_W        equ 32
+RUN_BTN_GADGET_H        equ 8
+
+
 
 
 ;-------------------------------------------------------------------------------
