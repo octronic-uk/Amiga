@@ -74,9 +74,18 @@ _message_handler_check_window_close:
     jmp     _message_handler_done
 _message_handler_check_menu_pick:
     cmpi.l  #IDCMP_MENUPICK,d6
-    bne     _message_handler_done
+    bne     _message_handler_check_gadget_down
     jsr     message_handler_menu_pick
     jmp     _message_handler_done
+_message_handler_check_gadget_down:
+    cmpi.l  #IDCMP_GADGETDOWN,d6
+    bne     _message_handler_check_gadget_up
+    jsr     message_handler_gadget_down
+    jmp     _message_handler_done
+_message_handler_check_gadget_up:
+    cmpi.l  #IDCMP_GADGETUP,d6
+    bne     _message_handler_done
+    jsr     message_handler_gadget_up
 _message_handler_done: 
     rts
 
@@ -94,24 +103,65 @@ message_handler_menu_pick:
     ; Title
     clr.l   d6
     move.w  d7,d6   
-    andi.l  #$0000001F,d6
+    andi.w  #$001F,d6
     ; item
     clr.l   d5
     move.w  d7,d5   
     lsr     #5,d5
-    andi.l  #$0000003F,d5
+    andi.w  #$003F,d5
     ; sub menu
-    move.w  d7,d4   
     clr.l   d4
+    move.w  d7,d4   
     lsr     #8,d4
     lsr     #3,d4
-    andi.l  #$0000001F,d4
+    andi.w  #$001F,d4
     ; Check for file menu
-    cmpi.w  #1,d7
+    cmpi.w  #0,d6
+    bne     _message_handler_menu_click_done
+    jsr     message_handler_file_menu
 _message_handler_menu_click_done:
     rts
 
 message_handler_file_menu:
+    cmpi.w  #0,d5
+    bne     _message_handler_menu_click_done
+    jsr     message_handler_window_close
+    rts
+
+message_handler_gadget_down:
+    ; Get value
+    move.l  28(a0),d7
+    ; Compare Gadgets
+    cmpi.l  #vSoundGadget,d7
+    bne     _message_handler_gadget_down_done
+    jsr      message_handler_gadget_sound
+_message_handler_gadget_down_done
+    rts
+  
+message_handler_gadget_up:
+    ; Get value
+    move.l  28(a0),d7
+    ; Compare Gadgets
+    cmpi.l  #vRunButtonGadget,d7
+    bne     _message_handler_gadget_up_check_ne
+    jsr      message_handler_gadget_run
+    jmp     _message_handler_gadget_up_done
+_message_handler_gadget_up_check_ne:
+    ; Compare Gadgets
+    cmpi.l  #vNumElementsGadget,d7
+    bne     _message_handler_gadget_up_done
+    jsr      message_handler_gadget_num_elements
+_message_handler_gadget_up_done:
+    rts
+
+message_handler_gadget_sound:
+    rts
+
+message_handler_gadget_num_elements:
+    jmp message_handler_gadget_num_elements
+    rts
+
+message_handler_gadget_run:
     rts
 
 copy_images_to_chip_ram:
@@ -375,7 +425,8 @@ vWindowDef_W:           dc.w    600
 vWindowDef_H:           dc.w    220
 vWindowDef_FGColour:    dc.b    1
 vWindowDef_BGColour:    dc.b    3
-vWindowDef_IDCMP:       dc.l    $200
+vWindowDef_IDCMP:       dc.l    IDCMP_CLOSEWINDOW|IDCMP_MENUPICK|IDCMP_GADGETDOWN|IDCMP_GADGETUP
+                                
 vWindowDef_Type:        dc.l    $100f
 vWindowDef_Gadget:      dc.l    vSoundGadget
 vWindowDef_Graphics:    dc.l    0
@@ -448,7 +499,7 @@ vSoundGadget:
     dc.l    vSoundText              ; Text
     dc.l    0                       ; No Exclude
     dc.l    0                       ; No Special Info
-    dc.w    1                       ; Gadget ID
+    dc.w    GADGET_SOUND            ; Gadget ID
     dc.l    0                       ; User Data
 
     even
@@ -540,14 +591,14 @@ vNumElementsGadget:
     dc.w    NUM_ELEMENTS_W          
     dc.w    NUM_ELEMENTS_H          
     dc.w    0                       ; Flags: Normal
-    dc.w    $802                    ; Activation $802 for long int
+    dc.w    $803                    ; Activation $802 for long int
     dc.w    4                       ; Type: String gadget
     dc.l    vNumElementsBorder      ; Pointer to border
     dc.l    0                       ; No drawing
     dc.l    vNumElementsText        ; No Text
     dc.l    0                       ; No exclude
     dc.l    vNumElementsStrInfo     ; * to StringInfo
-    dc.w    2                       ; Gadget ID
+    dc.w    GADGET_NUM_ELEMENTS     ; Gadget ID
     dc.l    0                       ; No User Data
 
 
@@ -587,10 +638,12 @@ vNumElementsStrInfo:
     dc.l    0                       ; Standard keyboard table
 
     even
-vNumElementsStrBuffer:      dc.b    '10',000
+vNumElementsStrBuffer:
+    dc.b    '10',000
 
     even
-vNumElementsUndoBuffer:     dc.b    '00000' 
+vNumElementsUndoBuffer:
+    dc.b    '00000' 
 
     even
 vNumElementsText: 
@@ -605,7 +658,6 @@ vNumElementsText:
     even
 vNumElementsStr:
     dc.b    "Elements to sort",0
-
 
 ; Run Button Gadget ------------------------------------------------------------
 
@@ -624,7 +676,7 @@ vRunButtonGadget:
     dc.l    vRunButtonText          ; Text
     dc.l    0                       ; No Exclude
     dc.l    0                       ; No Special Info
-    dc.w    3                       ; Gadget ID
+    dc.w    GADGET_RUN              ; Gadget ID
     dc.l    0                       ; User Data
 
     even
@@ -659,9 +711,6 @@ vRunButtonBorderCoords:
     dc.w    RUN_BTN_GADGET_W+2, RUN_BTN_GADGET_H+2
     dc.w    0, RUN_BTN_GADGET_H+2
     dc.w    0, 0 
-
-   
-
 
 ;-------------------------------------------------------------------------------
     section bss
@@ -715,26 +764,26 @@ INTU_AUTO_REQUEST       equ -348
 
 ; IDCMP
 
-IDCMP_SIZEVERIFY        equ $000001 
-IDCMP_NEWSIZE           equ $000002
-IDCMP_REFRESHWINDOW     equ $000004
-IDCMP_MOUSEBUTTONS      equ $000008
-IDCMP_MOUSEMOVE         equ $000010
-IDCMP_GADGETDOWN        equ $000020
-IDCMP_GADGETUP          equ $000040
-IDCMP_REQSET            equ $000080
-IDCMP_MENUPICK          equ $000100
-IDCMP_CLOSEWINDOW       equ $000200
-IDCMP_RAWKEY            equ $000400
-IDCMP_REQVERIFY         equ $000800
-IDCMP_REQCLEAR          equ $001000
-IDCMP_MENUVERIFY        equ $002000
-IDCMP_NEWPREFS          equ $004000
-IDCMP_DISKINSERTED      equ $008000
-IDCMP_DISKREMOVED       equ $010000
-IDCMP_WBENCHMESSAGE     equ $020000
-IDCMP_ACTIVEWINDOW      equ $040000
-IDCMP_INACTlVEWINDOW    equ $080000
+IDCMP_SIZEVERIFY        equ $1 
+IDCMP_NEWSIZE           equ $2
+IDCMP_REFRESHWINDOW     equ $4
+IDCMP_MOUSEBUTTONS      equ $8
+IDCMP_MOUSEMOVE         equ $10
+IDCMP_GADGETDOWN        equ $20
+IDCMP_GADGETUP          equ $40
+IDCMP_REQSET            equ $80
+IDCMP_MENUPICK          equ $100
+IDCMP_CLOSEWINDOW       equ $200
+IDCMP_RAWKEY            equ $400
+IDCMP_REQVERIFY         equ $800
+IDCMP_REQCLEAR          equ $1000
+IDCMP_MENUVERIFY        equ $2000
+IDCMP_NEWPREFS          equ $4000
+IDCMP_DISKINSERTED      equ $8000
+IDCMP_DISKREMOVED       equ $10000
+IDCMP_WBENCHMESSAGE     equ $20000
+IDCMP_ACTIVEWINDOW      equ $40000
+IDCMP_INACTlVEWINDOW    equ $80000
 IDCMP_DELTAMOVE         equ $100000
 
 ; Misc
@@ -762,8 +811,13 @@ RUN_BTN_GADGET_Y        equ 15
 RUN_BTN_GADGET_W        equ 32
 RUN_BTN_GADGET_H        equ 8
 
+GADGET_SOUND            equ 1
+GADGET_NUM_ELEMENTS     equ 2
+GADGET_RUN              equ 3
 
+; Includes ---------------------------------------------------------------------
 
+    include "BubbleSort.S"
 
 ;-------------------------------------------------------------------------------
     end
