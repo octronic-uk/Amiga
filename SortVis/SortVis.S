@@ -15,11 +15,30 @@
 main:
     jsr     copy_images_to_chip_ram
     move.w  #FALSE,vMainDone
-    ; Open Intuition Lib
-    pea     vIntuLibNameStr
-    jsr     exec_open_lib
+    jsr     open_libraries
+    jsr     setup_window
+_main_loop:
+    ; Get Messages
+    move.l  vUserPortPtr,-(sp)
+    jsr     exec_get_msg
     addq.l  #4,sp
-    move.l  d0,vIntuBase
+    move.l  d0,vIntuMsgPtr
+    ; Handle Messages
+    jsr     message_handler
+    ; Should close?
+    cmpi.w  #TRUE,vMainDone
+    beq     _main_close
+    jmp     _main_loop
+_main_close:
+    jsr     destruct_window
+    jsr     free_resources
+    jsr     close_libraries 
+    ; Close Application
+    rts
+
+; App Routines -----------------------------------------------------------------
+
+setup_window:
     ; Open WBScreen
     jsr     intu_open_workbench
     ; Open Window
@@ -37,30 +56,36 @@ main:
     move.l  #SOUND_GADGET_Y,-(sp)
     jsr     intu_draw_border
     add.l   #12,sp
-_main_loop:
-    ; Get Messages
-    move.l  vUserPortPtr,-(sp)
-    jsr     exec_get_msg
-    addq.l  #4,sp
-    move.l  d0,vIntuMsgPtr
-    ; Handle Messages
-    jsr     message_handler
-    ; Should close?
-    cmpi.w  #TRUE,vMainDone
-    beq     _main_close
-    jmp     _main_loop
-_main_close:
-    jsr     intu_clear_menu_strip
-    jsr     intu_close_window
-    ; Close Intuition Lib
-    move.l  vIntuBase,-(sp)
-    jsr     free_resources
-    jsr     exec_close_lib
-    addq.l  #4,sp
-    ; Close Application
     rts
 
-; App Routines -----------------------------------------------------------------
+destruct_window:
+    jsr     intu_clear_menu_strip
+    jsr     intu_close_window
+    rts
+
+open_libraries:
+    ; Open Intuition Lib
+    pea     vIntuLibNameStr
+    jsr     exec_open_lib
+    addq.l  #4,sp
+    move.l  d0,vIntuBase
+    ; Open Graphics Lib
+    pea     vGraphicsLibNameStr
+    jsr     exec_open_lib
+    addq.l  #4,sp
+    move.l  d0,vGraphicsBase
+    rts
+
+close_libraries:
+    ; Close Graphics Lib
+    move.l  vGraphicsBase,-(sp)
+    jsr     exec_close_lib
+    addq.l  #4,sp
+    ; Close Intuition Lib
+    move.l  vIntuBase,-(sp)
+    jsr     exec_close_lib
+    addq.l  #4,sp
+    rts
 
 message_handler:
     cmpi.l  #0,vIntuMsgPtr
@@ -158,10 +183,109 @@ message_handler_gadget_sound:
     rts
 
 message_handler_gadget_num_elements:
-    jmp message_handler_gadget_num_elements
     rts
 
 message_handler_gadget_run:
+    pea     vElementsTable
+    move.l  vNumElementsStrInfoLong,-(sp)
+    jsr     rng_table
+    addq.l  #8,sp
+    ; Bubble Sort
+    move.l  #vElementsTable,-(sp)
+    move.w  vNumElementsStrInfoLong+2,-(sp)
+    move.l  #bs_on_comparison,-(sp)
+    move.l  #bs_on_swap,-(sp)
+    move.l  #bs_on_iteration,-(sp) 
+    jsr     BubbleSort
+    add.l   #BUBBLE_SORT_ALIGN,sp
+    rts
+
+bs_on_comparison:
+    rts
+
+bs_on_swap:
+    rts
+
+bs_on_iteration:
+    jsr     draw_table
+    rts
+
+clear_table_bars:
+    ; Set fg pen to 0
+    move.w  #0,d0
+    movea.l vRastPortPtr,a1
+    movea.l vGraphicsBase,a6
+    jsr     GFX_SET_FG_PEN(a6)
+    ; Set area to clear
+    move.w  #4,-(sp)
+    move.w  #50,-(sp)
+    move.w  vWindowDef_W,d0
+    subq.w  #4,d0   ; Left Border
+    sub.w   #15,d0  ; Right Scrollbar
+    move.w  d0,-(sp)
+    move.w  #200,-(sp)
+    jsr     gfx_rect_fill
+    addq.l  #8,sp
+    rts
+
+draw_table:
+    jsr     clear_table_bars
+    
+    ; Go
+    move.w  #4,vBarX
+    move.w  #50,vBarY
+    move.w  #0,vBarWidth
+    move.w  #0,vBarHeight
+    clr.l   d0
+    clr.l   d1
+    move.l  vNumElementsStrInfoLong,d0
+    move.w  vWindowDef_W,d1
+    subq.w  #4,d1   ; Left Border
+    sub.w   #15,d1  ; Right Scrollbar
+    divu.w  d0,d1
+    move.w  d1,vBarWidth
+    subq.l  #1,d0
+    lea     vElementsTable,a0
+_draw_table_next:
+    ; get height
+    move.w  (a0)+,vBarHeight
+    move.l  d0,-(sp)
+    move.l  a0,-(sp)        ; Stash a0
+    ; Set fg pen
+    move.w  #1,d0
+    movea.l vRastPortPtr,a1
+    movea.l vGraphicsBase,a6
+    jsr     GFX_SET_FG_PEN(a6)
+    ; push draw args
+    move.w  vBarX,-(sp)     ; x-min
+    move.w  vBarY,-(sp)     ; y-min
+    ; Width
+    move.w  vBarX,d0
+    add.w   vBarWidth,d0
+    move.w  d0,vBarX
+    move.w  d0,-(sp)        ; x-max
+    ;Height
+    move.w  vBarY,d0
+    add.w   vBarHeight,d0
+    move.w  d0,-(sp)        ; y-max
+    ; Draw Bar
+    jsr     gfx_rect_fill
+    ;addq.l  #8,sp
+    ; Set fg pen
+    move.w  #2,d0
+    movea.l vRastPortPtr,a1
+    movea.l vGraphicsBase,a6
+    jsr     GFX_SET_FG_PEN(a6)
+    subq.w  #1,(sp)
+    subq.w  #1,2(sp)
+    addq.w  #1,4(sp)
+    addq.w  #1,6(sp)
+    jsr     gfx_rect_fill
+    addq.l  #8,sp
+    move.l  (sp)+,a0
+    move.l  (sp)+,d0
+    ; Next
+    dbra    d0,_draw_table_next
     rts
 
 copy_images_to_chip_ram:
@@ -215,6 +339,10 @@ free_resources:
 
 ; Exec Routines ----------------------------------------------------------------
 
+;   pea     vLibraryNameStr
+;   jsr     exec_open_lib
+;   addq.l  #4,sp
+;   move.w  d0,vLibraryBase
 exec_open_lib:
     movea.l 4(sp),a1
     movea.l EXEC_BASE,a6
@@ -401,6 +529,22 @@ intu_draw_border:
     jsr     INTU_DRAW_BORDER(a6)
     rts
 
+;   move.w  #xmin,-(sp)
+;   move.w  #ymin,-(sp)
+;   move.w  #xmax,-(sp)
+;   move.w  #ymax,-(sp)
+;   jsr     gfx_rect_fill
+;   addq.l  #8,sp
+gfx_rect_fill:
+    move.w  10(sp),d0
+    move.w  8(sp),d1
+    move.w  6(sp),d2
+    move.w  4(sp),d3
+    movea.l vRastPortPtr,a1
+    move.l  vGraphicsBase,a6
+    jsr     GFX_RECT_FILL(a6)
+    rts
+
 ;-------------------------------------------------------------------------------
     section data
 ;-------------------------------------------------------------------------------
@@ -410,6 +554,10 @@ intu_draw_border:
     even
 vIntuLibNameStr:  
     dc.b    "intuition.library",0
+
+    even
+vGraphicsLibNameStr:
+    dc.b    "graphics.library",0
 
 ; Window Definition ------------------------------------------------------------
 
@@ -634,6 +782,7 @@ vNumElementsStrInfo:
     dc.w    0                       ; horizontal box offset 
     dc.w    0                       ; vertical box offset
     dc.l    0                       ; pointer to RastPort
+vNumElementsStrInfoLong:
     dc.l    0                       ; long with value of input (for integers)
     dc.l    0                       ; Standard keyboard table
 
@@ -716,6 +865,7 @@ vRunButtonBorderCoords:
     section bss
 ;-------------------------------------------------------------------------------
 vIntuBase:                  ds.l    1
+vGraphicsBase:              ds.l    1
 vWindowPtr:                 ds.l    1
 vUserPortPtr:               ds.l    1
 vIntuMsgPtr:                ds.l    1
@@ -727,6 +877,13 @@ vRastPortPtr:               ds.l    1
 vSwitchOnImageDataChipPtr:  ds.l    1
 vSwitchOffImageDataChipPtr: ds.l    1
 
+vElementsTable:             ds.w    100
+
+vBarX:                      ds.w    1
+vBarY:                      ds.w    1
+vBarWidth:                  ds.w    1
+vBarHeight:                 ds.w    1
+
 
 ;-------------------------------------------------------------------------------
 ;   Constants
@@ -737,6 +894,7 @@ vSwitchOffImageDataChipPtr: ds.l    1
 TRUE                    equ 1
 FALSE                   equ 0
 
+
 ; Exec Library
 
 EXEC_BASE               equ 4
@@ -746,6 +904,13 @@ EXEC_FREE_MEM           equ -210 ; memoryBlock  a1, byteSize     d0
 EXEC_GET_MSG            equ -372
 EXEC_OPEN_LIB           equ -408
 EXEC_CLOSE_LIB          equ -414
+
+; Graphics Library
+GFX_RECT_FILL           equ -306
+GFX_SET_FG_PEN          equ -342
+GFX_SET_BG_PEN          equ -348
+GFX_SET_A_PEN           equ -352
+
 ; Intuition Library
 
 INTU_CLEAR_MENU_STRIP   equ -54
@@ -818,6 +983,7 @@ GADGET_RUN              equ 3
 ; Includes ---------------------------------------------------------------------
 
     include "BubbleSort.S"
+    include "RandomNums.S"
 
 ;-------------------------------------------------------------------------------
     end

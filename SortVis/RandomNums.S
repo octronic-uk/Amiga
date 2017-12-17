@@ -4,18 +4,22 @@
 ;-------------------------------------------------------------------------------
 
 ;   pea     table_output_address
-;   move.w  #NumberOfElements
-;   jsr     TableRNG
-;   addq.l  #6,sp
+;   move.l  #NumberOfElements
+;   jsr     rng_table
+;   addq.l  #8,sp
 rng_table:
     jsr     rng_seed
-    movea.l 6(sp),a0
-    move.w  4(sp),d0
+    movea.l 8(sp),a0
+    move.l  4(sp),d0
+    subq.l  #1,d0
 _rng_table_next:
-    move.w  d0,-(sp)
+    move.l  d0,-(sp)
     jsr     rng_get
-    move.w  vRngState,(a0)+
-    move.w  (sp)+,d0
+    andi.w  #$00FF,vRngState
+    move.w  vRngState,d0
+    lsr.w   #1,d0
+    move.w  d0,(a0)+
+    move.l  (sp)+,d0
     dbra    d0,_rng_table_next
     rts
 
