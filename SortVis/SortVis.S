@@ -168,8 +168,13 @@ message_handler_gadget_up:
     move.l  28(a0),d7
     ; Compare Gadgets
     cmpi.l  #vRunButtonGadget,d7
-    bne     _message_handler_gadget_up_check_ne
+    bne     _message_handler_gadget_up_check_generate
     jsr      message_handler_gadget_run
+    jmp     _message_handler_gadget_up_done
+_message_handler_gadget_up_check_generate:
+    cmpi.l  #vGenerateButtonGadget,d7
+    bne     _message_handler_gadget_up_check_ne
+    jsr      message_handler_gadget_generate
     jmp     _message_handler_gadget_up_done
 _message_handler_gadget_up_check_ne:
     ; Compare Gadgets
@@ -185,11 +190,17 @@ message_handler_gadget_sound:
 message_handler_gadget_num_elements:
     rts
 
-message_handler_gadget_run:
+message_handler_gadget_generate:
     pea     vElementsTable
     move.l  vNumElementsStrInfoLong,-(sp)
     jsr     rng_table
     addq.l  #8,sp
+    jsr     get_highest_element
+    jsr     calculate_bar_width
+    jsr     draw_table
+    rts
+
+message_handler_gadget_run:
     ; Bubble Sort
     move.l  #vElementsTable,-(sp)
     move.w  vNumElementsStrInfoLong+2,-(sp)
@@ -203,88 +214,141 @@ message_handler_gadget_run:
 bs_on_comparison:
     rts
 
+;   move.w    #index1,-(sp)
+;   move.w    #index2,-(sp)
+;   jsr       bs_on_swap
+;   addq.l    #4,sp
 bs_on_swap:
+    ; bar 1
+    move.w  4(sp),-(sp)
+    jsr     clear_bar
+    jsr     draw_bar
+    addq.l  #2,sp
+    ; bar 2
+    move.w  6(sp),-(sp)
+    jsr     clear_bar
+    jsr     draw_bar
+    addq.l  #2,sp
+    ; TODO - Update UI String
+    move.l  vBS_Swaps,vSwapsStrInfoLong
     rts
 
 bs_on_iteration:
-    jsr     draw_table
+    ;jsr     draw_table
     rts
 
-clear_table_bars:
-    ; Set fg pen to 0
-    move.w  #0,d0
-    movea.l vRastPortPtr,a1
-    movea.l vGraphicsBase,a6
-    jsr     GFX_SET_FG_PEN(a6)
-    ; Set area to clear
-    move.w  #4,-(sp)
-    move.w  #50,-(sp)
-    move.w  vWindowDef_W,d0
-    subq.w  #4,d0   ; Left Border
-    sub.w   #15,d0  ; Right Scrollbar
-    move.w  d0,-(sp)
-    move.w  #200,-(sp)
-    jsr     gfx_rect_fill
-    addq.l  #8,sp
-    rts
-
-draw_table:
-    jsr     clear_table_bars
-    
-    ; Go
-    move.w  #4,vBarX
-    move.w  #50,vBarY
-    move.w  #0,vBarWidth
-    move.w  #0,vBarHeight
+calculate_bar_width:
     clr.l   d0
     clr.l   d1
     move.l  vNumElementsStrInfoLong,d0
     move.w  vWindowDef_W,d1
-    subq.w  #4,d1   ; Left Border
-    sub.w   #15,d1  ; Right Scrollbar
+    subq.w  #GRAPH_START_X,d1   ; Left Border
+    sub.w   #RIGHT_SCROLLBAR,d1  ; Right Scrollbar
     divu.w  d0,d1
     move.w  d1,vBarWidth
-    subq.l  #1,d0
+    rts
+
+get_highest_element:
+    move.l  vNumElementsStrInfoLong,d0 
     lea     vElementsTable,a0
-_draw_table_next:
-    ; get height
-    move.w  (a0)+,vBarHeight
-    move.l  d0,-(sp)
-    move.l  a0,-(sp)        ; Stash a0
-    ; Set fg pen
-    move.w  #1,d0
+    clr.w   d1
+    clr.w   d2
+    clr.w   vHighestElement
+
+    subq.l  #1,d0
+_get_highest_element_next:
+    move.w   vHighestElement,d1
+    move.w  (a0)+,d2
+    cmp.w   d1,d2
+    bls     _get_highest_element_skip
+    move.w  d2,vHighestElement
+_get_highest_element_skip:
+    dbra    d0,_get_highest_element_next
+    rts
+
+;   move.w  #INDEX,-(sp)
+;   jsr     draw_bar
+;   addq.l  #2,sp
+draw_bar:
+    ; Set fg pen to 1 
+    move.w  #2,d0
     movea.l vRastPortPtr,a1
     movea.l vGraphicsBase,a6
     jsr     GFX_SET_FG_PEN(a6)
+    ; Set area draw
+    clr.l   d0
+    clr.l   d1
+    move.w  4(sp),a1
+    lea     vElementsTable,a0
+    move.w  (a0,a1.w),vBarHeight    ; get height
+    move.w  4(sp),d0                ; index
+    lsr.w   #1,d0                   ; half index
+    mulu.w  vBarWidth,d0            ; *  bar width
+    addq.l  #GRAPH_START_X,d0         ; left border
+    move.w  d0,vBarX                ; x min
+    ; Offset to bottom
+    move.w  #GRAPH_START_Y,d0
+    add.w   vHighestElement,d0
+    sub.w   vBarHeight,d0
+    move.w  d0,vBarY                ; y min
     ; push draw args
-    move.w  vBarX,-(sp)     ; x-min
-    move.w  vBarY,-(sp)     ; y-min
+    move.w  vBarX,-(sp)             ; x-min
+    move.w  vBarY,-(sp)             ; y-min
     ; Width
     move.w  vBarX,d0
     add.w   vBarWidth,d0
-    move.w  d0,vBarX
     move.w  d0,-(sp)        ; x-max
     ;Height
     move.w  vBarY,d0
     add.w   vBarHeight,d0
     move.w  d0,-(sp)        ; y-max
     ; Draw Bar
-    jsr     gfx_rect_fill
-    ;addq.l  #8,sp
-    ; Set fg pen
-    move.w  #2,d0
-    movea.l vRastPortPtr,a1
-    movea.l vGraphicsBase,a6
-    jsr     GFX_SET_FG_PEN(a6)
     subq.w  #1,(sp)
     subq.w  #1,2(sp)
     addq.w  #1,4(sp)
     addq.w  #1,6(sp)
     jsr     gfx_rect_fill
     addq.l  #8,sp
-    move.l  (sp)+,a0
-    move.l  (sp)+,d0
-    ; Next
+    rts
+
+;   move.w  #INDEX,-(sp)
+;   jsr     clear_bar
+;   addq.l  #2,sp
+clear_bar:
+    ; Set fg pen to 0
+    move.w  #0,d0
+    movea.l vRastPortPtr,a1
+    movea.l vGraphicsBase,a6
+    jsr     GFX_SET_FG_PEN(a6)
+    ; Set area to clear
+    clr.l   d0
+    move.w  4(sp),d0      ; index
+    lsr.w   #1,d0         ; half index
+    mulu.w  vBarWidth,d0  ; *  bar width
+    addq.l  #GRAPH_START_X,d0         ; left border
+    move.w  d0,-(sp)      ; x min
+    move.w  #GRAPH_START_Y,-(sp)     ; y min
+    add.w   vBarWidth,d0
+    move.w  d0,-(sp)      ; x max
+    move.w  vHighestElement,d0
+    add.l   #GRAPH_START_Y,d0
+    move.w  d0,-(sp)    ; y max
+    jsr     gfx_rect_fill
+    addq.l  #8,sp
+    rts
+
+draw_table:
+    move.l  vNumElementsStrInfoLong,d0
+    clr.l   d1
+    subq.l  #1,d0
+_draw_table_next:
+    movem.l d0-d1,-(sp)
+    move.w  d1,-(sp)
+    jsr     clear_bar
+    jsr     draw_bar
+    addq.l  #2,sp
+    movem.l (sp)+,d0-d1
+    addq.w  #2,d1
     dbra    d0,_draw_table_next
     rts
 
@@ -563,14 +627,14 @@ vGraphicsLibNameStr:
 
     even
 vWindowTitleStr:       
-    dc.b    "Octronic SortVis v1",0
+    dc.b    "Octronic Sort Visualiser v1",0
 
     even
 vWindowDef: 
 vWindowDef_X:           dc.w    20
 vWindowDef_Y:           dc.w    20
-vWindowDef_W:           dc.w    600
-vWindowDef_H:           dc.w    220
+vWindowDef_W:           dc.w    640
+vWindowDef_H:           dc.w    240
 vWindowDef_FGColour:    dc.b    1
 vWindowDef_BGColour:    dc.b    3
 vWindowDef_IDCMP:       dc.l    IDCMP_CLOSEWINDOW|IDCMP_MENUPICK|IDCMP_GADGETDOWN|IDCMP_GADGETUP
@@ -733,7 +797,7 @@ vSoundBorderCoords:
 
     even
 vNumElementsGadget:
-    dc.l    vRunButtonGadget        ; * to next gadget 
+    dc.l    vGenerateButtonGadget        ; * to next gadget 
     dc.w    NUM_ELEMENTS_X          ; X,Y,W,H
     dc.w    NUM_ELEMENTS_Y          
     dc.w    NUM_ELEMENTS_W          
@@ -774,7 +838,7 @@ vNumElementsStrInfo:
     dc.l    vNumElementsStrBuffer   ; Pointer to text buffer
     dc.l    vNumElementsUndoBuffer  ; Pointer to undo buffer
     dc.w    0                       ; Cursor position
-    dc.w    3                       ; Max # of chars
+    dc.w    4                       ; Max # of chars
     dc.w    0                       ; Output txt from this character
     dc.w    0                       ; Char pos in undo buffer
     dc.w    0                       ; # of chars in text buffer
@@ -788,7 +852,7 @@ vNumElementsStrInfoLong:
 
     even
 vNumElementsStrBuffer:
-    dc.b    '10',000
+    dc.b    '305',00
 
     even
 vNumElementsUndoBuffer:
@@ -799,7 +863,7 @@ vNumElementsText:
     dc.b    1,2                     ; Colours
     dc.b    0                       ; Mode: Overwrite
     even
-    dc.w    26,0                    ; X/Y Position
+    dc.w    34,0                    ; X/Y Position
     dc.l    0                       ; Charset
     dc.l    vNumElementsStr         ; String pointer
     dc.l    0
@@ -808,11 +872,64 @@ vNumElementsText:
 vNumElementsStr:
     dc.b    "Elements to sort",0
 
+; Generate Button Gadget -------------------------------------------------------
+
+    even
+vGenerateButtonGadget:
+    dc.l    vRunButtonGadget        ; Next Gadget
+    dc.w    GENERATE_BTN_GADGET_X   ; X Position
+    dc.w    GENERATE_BTN_GADGET_Y   ; Y Position
+    dc.w    GENERATE_BTN_GADGET_W   ; Hitbox W
+    dc.w    GENERATE_BTN_GADGET_H   ; Hitbox H
+    dc.w    $0                      ; Flags: Invert
+    dc.w    $3                      ; Activation Flags
+    dc.w    1                       ; Type: Boolean
+    dc.l    vGenerateButtonBorder   ; Gadget Image
+    dc.l    0                       ; No new gadget
+    dc.l    vGenerateButtonText     ; Text
+    dc.l    0                       ; No Exclude
+    dc.l    0                       ; No Special Info
+    dc.w    GADGET_GENERATE         ; Gadget ID
+    dc.l    0                       ; User Data
+
+    even
+vGenerateButtonText: 
+    dc.b    1,2                     ; Colours
+    dc.b    0                       ; Mode: Overwrite
+    even
+    dc.w    0,0                     ; X/Y Position
+    dc.l    0                       ; Charset
+    dc.l    vGenerateButtonStr      ; String pointer
+    dc.l    0
+
+    even
+vGenerateButtonStr:
+    dc.b    "Generate",0
+
+    even
+vGenerateButtonBorder:
+    dc.w    -2      ; Horizontal Distance
+    dc.w    -2      ; Vertical Distance
+    dc.b    1       ; black Frame
+    dc.b    0       ; Background (unused)
+    dc.b    0       ; Mode: JAM1
+    dc.b    5       ; 5 X/Y pairs used together
+    dc.l    vGenerateButtonBorderCoords
+    dc.l    0       ; No more structs
+
+    even
+vGenerateButtonBorderCoords:
+    dc.w    0,0 
+    dc.w    GENERATE_BTN_GADGET_W+2, 0 
+    dc.w    GENERATE_BTN_GADGET_W+2, GENERATE_BTN_GADGET_H+2
+    dc.w    0, GENERATE_BTN_GADGET_H+2
+    dc.w    0, 0 
+
 ; Run Button Gadget ------------------------------------------------------------
 
     even
 vRunButtonGadget:
-    dc.l    0                       ; Next Gadget
+    dc.l    vComparisonsGadget      ; Next Gadget
     dc.w    RUN_BTN_GADGET_X        ; X Position
     dc.w    RUN_BTN_GADGET_Y        ; Y Position
     dc.w    RUN_BTN_GADGET_W        ; Hitbox W
@@ -861,9 +978,247 @@ vRunButtonBorderCoords:
     dc.w    0, RUN_BTN_GADGET_H+2
     dc.w    0, 0 
 
+; Comparisons Gadget -----------------------------------------------------------
+
+    even
+vComparisonsGadget:
+    dc.l    vIterationsGadget       ; * to next gadget 
+    dc.w    COMPARISONS_X           ; X,Y,W,H
+    dc.w    COMPARISONS_Y          
+    dc.w    COMPARISONS_W          
+    dc.w    COMPARISONS_H          
+    dc.w    0                       ; Flags: Normal
+    dc.w    $803                    ; Activation $802 for long int
+    dc.w    4                       ; Type: String gadget
+    dc.l    vComparisonsBorder      ; Pointer to border
+    dc.l    0                       ; No drawing
+    dc.l    vComparisonsText        ; No Text
+    dc.l    0                       ; No exclude
+    dc.l    vComparisonsStrInfo     ; * to StringInfo
+    dc.w    GADGET_COMPARISONS      ; Gadget ID
+    dc.l    0                       ; No User Data
+
+    even
+vComparisonsBorder:
+    dc.w    -2      ; Horizontal Distance
+    dc.w    -2      ; Vertical Distance
+    dc.b    1       ; black Frame
+    dc.b    0       ; Background (unused)
+    dc.b    0       ; Mode: JAM1
+    dc.b    5       ; 5 X/Y pairs used together
+    dc.l    vComparisonsBorderCoords
+    dc.l    0       ; No more structs
+
+    even
+vComparisonsBorderCoords:
+    dc.w    0,0 
+    dc.w    COMPARISONS_W+2, 0 
+    dc.w    COMPARISONS_W+2, COMPARISONS_H+2
+    dc.w    0, COMPARISONS_H+2
+    dc.w    0,0 
+
+    even
+vComparisonsStrInfo:
+    dc.l    vComparisonsStrBuffer   ; Pointer to text buffer
+    dc.l    vComparisonsUndoBuffer  ; Pointer to undo buffer
+    dc.w    0                       ; Cursor position
+    dc.w    4                       ; Max # of chars
+    dc.w    0                       ; Output txt from this character
+    dc.w    0                       ; Char pos in undo buffer
+    dc.w    0                       ; # of chars in text buffer
+    dc.w    0                       ; # of chars visible in box 
+    dc.w    0                       ; horizontal box offset 
+    dc.w    0                       ; vertical box offset
+    dc.l    0                       ; pointer to RastPort
+vComparisonsStrInfoLong:
+    dc.l    0                       ; long with value of input (for integers)
+    dc.l    0                       ; Standard keyboard table
+
+    even
+vComparisonsStrBuffer:
+    dc.b    '0000',0
+
+    even
+vComparisonsUndoBuffer:
+    dc.b    '00000' 
+
+    even
+vComparisonsText: 
+    dc.b    1,2                     ; Colours
+    dc.b    0                       ; Mode: Overwrite
+    even
+    dc.w    34,0                    ; X/Y Position
+    dc.l    0                       ; Charset
+    dc.l    vComparisonsStr         ; String pointer
+    dc.l    0
+
+    even
+vComparisonsStr:
+    dc.b    "Comparisons",0
+
+; Iterations Gadget ------------------------------------------------------------
+
+    even
+vIterationsGadget:
+    dc.l    vSwapsGadget          ; * to next gadget 
+    dc.w    ITERATIONS_X          ; X,Y,W,H
+    dc.w    ITERATIONS_Y          
+    dc.w    ITERATIONS_W          
+    dc.w    ITERATIONS_H          
+    dc.w    0                       ; Flags: Normal
+    dc.w    $803                    ; Activation $802 for long int
+    dc.w    4                       ; Type: String gadget
+    dc.l    vIterationsBorder      ; Pointer to border
+    dc.l    0                       ; No drawing
+    dc.l    vIterationsText        ; No Text
+    dc.l    0                       ; No exclude
+    dc.l    vIterationsStrInfo     ; * to StringInfo
+    dc.w    GADGET_ITERATIONS      ; Gadget ID
+    dc.l    0                       ; No User Data
+
+
+    even
+vIterationsBorder:
+    dc.w    -2      ; Horizontal Distance
+    dc.w    -2      ; Vertical Distance
+    dc.b    1       ; black Frame
+    dc.b    0       ; Background (unused)
+    dc.b    0       ; Mode: JAM1
+    dc.b    5       ; 5 X/Y pairs used together
+    dc.l    vIterationsBorderCoords
+    dc.l    0       ; No more structs
+
+    even
+vIterationsBorderCoords:
+    dc.w    0,0 
+    dc.w    ITERATIONS_W+2, 0 
+    dc.w    ITERATIONS_W+2, ITERATIONS_H+2
+    dc.w    0, ITERATIONS_H+2
+    dc.w    0,0 
+
+    even
+vIterationsStrInfo:
+    dc.l    vIterationsStrBuffer   ; Pointer to text buffer
+    dc.l    vIterationsUndoBuffer  ; Pointer to undo buffer
+    dc.w    0                       ; Cursor position
+    dc.w    4                       ; Max # of chars
+    dc.w    0                       ; Output txt from this character
+    dc.w    0                       ; Char pos in undo buffer
+    dc.w    0                       ; # of chars in text buffer
+    dc.w    0                       ; # of chars visible in box 
+    dc.w    0                       ; horizontal box offset 
+    dc.w    0                       ; vertical box offset
+    dc.l    0                       ; pointer to RastPort
+vIterationsStrInfoLong:
+    dc.l    0                       ; long with value of input (for integers)
+    dc.l    0                       ; Standard keyboard table
+
+    even
+vIterationsStrBuffer:
+    dc.b    '0000',0
+
+    even
+vIterationsUndoBuffer:
+    dc.b    '00000' 
+
+    even
+vIterationsText: 
+    dc.b    1,2                     ; Colours
+    dc.b    0                       ; Mode: Overwrite
+    even
+    dc.w    34,0                    ; X/Y Position
+    dc.l    0                       ; Charset
+    dc.l    vIterationsStr         ; String pointer
+    dc.l    0
+
+    even
+vIterationsStr:
+    dc.b    "Iterations",0
+
+; Swaps Gadget -----------------------------------------------------------------
+
+    even
+vSwapsGadget:
+    dc.l    0                 ; * to next gadget 
+    dc.w    SWAPS_X           ; X,Y,W,H
+    dc.w    SWAPS_Y          
+    dc.w    SWAPS_W          
+    dc.w    SWAPS_H          
+    dc.w    0                 ; Flags: Normal
+    dc.w    $803              ; Activation $802 for long int
+    dc.w    4                 ; Type: String gadget
+    dc.l    vSwapsBorder      ; Pointer to border
+    dc.l    0                 ; No drawing
+    dc.l    vSwapsText        ; No Text
+    dc.l    0                 ; No exclude
+    dc.l    vSwapsStrInfo     ; * to StringInfo
+    dc.w    GADGET_SWAPS      ; Gadget ID
+    dc.l    0                 ; No User Data
+
+
+    even
+vSwapsBorder:
+    dc.w    -2      ; Horizontal Distance
+    dc.w    -2      ; Vertical Distance
+    dc.b    1       ; black Frame
+    dc.b    0       ; Background (unused)
+    dc.b    0       ; Mode: JAM1
+    dc.b    5       ; 5 X/Y pairs used together
+    dc.l    vSwapsBorderCoords
+    dc.l    0       ; No more structs
+
+    even
+vSwapsBorderCoords:
+    dc.w    0,0 
+    dc.w    SWAPS_W+2, 0 
+    dc.w    SWAPS_W+2, SWAPS_H+2
+    dc.w    0, SWAPS_H+2
+    dc.w    0,0 
+
+    even
+vSwapsStrInfo:
+    dc.l    vSwapsStrBuffer   ; Pointer to text buffer
+    dc.l    vSwapsUndoBuffer  ; Pointer to undo buffer
+    dc.w    0                 ; Cursor position
+    dc.w    4                 ; Max # of chars
+    dc.w    0                 ; Output txt from this character
+    dc.w    0                 ; Char pos in undo buffer
+    dc.w    0                 ; # of chars in text buffer
+    dc.w    0                 ; # of chars visible in box 
+    dc.w    0                 ; horizontal box offset 
+    dc.w    0                 ; vertical box offset
+    dc.l    0                 ; pointer to RastPort
+vSwapsStrInfoLong:
+    dc.l    0                 ; long with value of input (for integers)
+    dc.l    0                 ; Standard keyboard table
+
+    even
+vSwapsStrBuffer:
+    dc.b    '0000',0
+
+    even
+vSwapsUndoBuffer:
+    dc.b    '00000' 
+
+    even
+vSwapsText: 
+    dc.b    1,2                     ; Colours
+    dc.b    0                       ; Mode: Overwrite
+    even
+    dc.w    34,0                    ; X/Y Position
+    dc.l    0                       ; Charset
+    dc.l    vSwapsStr               ; String pointer
+    dc.l    0
+
+    even
+vSwapsStr:
+    dc.b    "Swaps",0
+
+
 ;-------------------------------------------------------------------------------
     section bss
 ;-------------------------------------------------------------------------------
+
 vIntuBase:                  ds.l    1
 vGraphicsBase:              ds.l    1
 vWindowPtr:                 ds.l    1
@@ -877,25 +1232,25 @@ vRastPortPtr:               ds.l    1
 vSwitchOnImageDataChipPtr:  ds.l    1
 vSwitchOffImageDataChipPtr: ds.l    1
 
-vElementsTable:             ds.w    100
+vElementsTable:             ds.w    1000
 
 vBarX:                      ds.w    1
 vBarY:                      ds.w    1
 vBarWidth:                  ds.w    1
 vBarHeight:                 ds.w    1
+vHighestElement:            ds.w    1
 
 
 ;-------------------------------------------------------------------------------
 ;   Constants
 ;-------------------------------------------------------------------------------
 
-; Application Specific
+; Application Specific ---------------------------------------------------------
 
 TRUE                    equ 1
 FALSE                   equ 0
 
-
-; Exec Library
+; Exec Library -----------------------------------------------------------------
 
 EXEC_BASE               equ 4
 EXEC_ALLOC_MEM          equ -198 ; byteSize     d0, requirements d1 
@@ -905,13 +1260,14 @@ EXEC_GET_MSG            equ -372
 EXEC_OPEN_LIB           equ -408
 EXEC_CLOSE_LIB          equ -414
 
-; Graphics Library
+; Graphics Library -------------------------------------------------------------
+
 GFX_RECT_FILL           equ -306
 GFX_SET_FG_PEN          equ -342
 GFX_SET_BG_PEN          equ -348
 GFX_SET_A_PEN           equ -352
 
-; Intuition Library
+; Intuition Library ------------------------------------------------------------
 
 INTU_CLEAR_MENU_STRIP   equ -54
 INTU_CLOSE_SCREEN       equ -66
@@ -927,7 +1283,7 @@ INTU_SET_MENU_STRIP     equ -264
 INTU_VIEWPORT_ADDRESS   equ -300
 INTU_AUTO_REQUEST       equ -348
 
-; IDCMP
+; IDCMP ------------------------------------------------------------------------
 
 IDCMP_SIZEVERIFY        equ $1 
 IDCMP_NEWSIZE           equ $2
@@ -951,7 +1307,7 @@ IDCMP_ACTIVEWINDOW      equ $40000
 IDCMP_INACTlVEWINDOW    equ $80000
 IDCMP_DELTAMOVE         equ $100000
 
-; Misc
+; Misc -------------------------------------------------------------------------
 
 CHIPMEM_LIMIT           equ $080000
 MEMF_CHIP               equ 2
@@ -959,26 +1315,56 @@ SOUND_ICON_W            equ 32
 SOUND_ICON_H            equ 7
 IMG_SIZE                equ (SOUND_ICON_W*SOUND_ICON_H)/8
 
+; Layout -----------------------------------------------------------------------
 
-; Layout
 SOUND_GADGET_X          equ 10
 SOUND_GADGET_Y          equ 15
 SOUND_GADGET_W          equ 80
 SOUND_GADGET_H          equ 8
 
-NUM_ELEMENTS_X          equ 100
+NUM_ELEMENTS_X          equ 97
 NUM_ELEMENTS_Y          equ 15
-NUM_ELEMENTS_W          equ 160
+NUM_ELEMENTS_W          equ 168
 NUM_ELEMENTS_H          equ 8
 
-RUN_BTN_GADGET_X        equ 270
+GENERATE_BTN_GADGET_X   equ 272
+GENERATE_BTN_GADGET_Y   equ 15
+GENERATE_BTN_GADGET_W   equ 66
+GENERATE_BTN_GADGET_H   equ 8
+
+RUN_BTN_GADGET_X        equ 344
 RUN_BTN_GADGET_Y        equ 15
 RUN_BTN_GADGET_W        equ 32
 RUN_BTN_GADGET_H        equ 8
 
+COMPARISONS_X           equ 10
+COMPARISONS_Y           equ 30
+COMPARISONS_W           equ 126
+COMPARISONS_H           equ 8
+
+ITERATIONS_X            equ 144
+ITERATIONS_Y            equ 30
+ITERATIONS_W            equ 116
+ITERATIONS_H            equ 8
+
+SWAPS_X                 equ 270
+SWAPS_Y                 equ 30 
+SWAPS_W                 equ 80
+SWAPS_H                 equ 8
+
+GRAPH_START_X           equ 8
+GRAPH_START_Y           equ 50
+RIGHT_SCROLLBAR         equ 15
+
+; Gadget IDs -------------------------------------------------------------------
+
 GADGET_SOUND            equ 1
 GADGET_NUM_ELEMENTS     equ 2
-GADGET_RUN              equ 3
+GADGET_GENERATE         equ 3
+GADGET_RUN              equ 4
+GADGET_COMPARISONS      equ 5
+GADGET_ITERATIONS       equ 6
+GADGET_SWAPS            equ 7
 
 ; Includes ---------------------------------------------------------------------
 

@@ -45,20 +45,20 @@ BubbleSort:
     move.w  _BUBBLE_SORT_TABLE_SZ(sp),d0    ; Number in the counter
     movea.l _BUBBLE_SORT_TABLE_ADDR(sp),a0  ; Load pointer with address
 
-    clr.w	vBS_Iters               ; Clear iteration counter
-    clr.w   vBS_Comps               ; Clear Comparison Counter
-    clr.w   vBS_Swaps               ; Clear Swap Counter
+    clr.l	vBS_Iters               ; Clear iteration counter
+    clr.l   vBS_Comps               ; Clear Comparison Counter
+    clr.l   vBS_Swaps               ; Clear Swap Counter
 _sort_setup:
     clr.w   vBS_Index               ; Clear array index
     clr.w   vBS_Dirty               ; Erase dirty flag
     move.w  d0,d1                   ; Copy number of elements to work reg      
     subq.w  #2,d1                   ; Correct counter value.
-    sub.w   vBS_Iters,d1            ; Ignore sorted elements at the end
+    sub.l   vBS_Iters,d1            ; Ignore sorted elements at the end
 _sort_loop:
     move.w  vBS_Index,a1
     move.w  (a0,a1.w),vBS_ValA      ; store n1
     move.w  2(a0,a1.w),vBS_ValB     ; store n2
-    addq.w  #1,vBS_Comps            ; Increment comparison counter
+    addq.l  #1,vBS_Comps            ; Increment comparison counter
 
     movea.l vBS_OnCompPtr,a2
     movem.l d0-d2/a0-a2,-(sp)
@@ -72,18 +72,25 @@ _sort_loop:
     move.w  vBS_ValB,(a0,a1.w)      ; Put n2 into n1
     move.w  vBS_ValA,2(a0,a1.w)     ; Move n1 into n2
     move.w  #1,vBS_Dirty            ; Set dirty flag
-    addq.w  #1,vBS_Swaps            ; Increment swap counter
+    addq.l  #1,vBS_Swaps            ; Increment swap counter
 
     movea.l vBS_OnSwapPtr,a2
-    movem.l d0-d2/a0-a2,-(sp)
+    movem.l d0-d2/a0-a2,-(sp)       ; save state
+
+    move.w  vBS_Index,d0
+    addq.w  #2,d0
+    move.w  vBS_Index,-(sp)
+    move.w  d0,-(sp)
     jsr     (a2)
-    movem.l (sp)+,d0-d2/a0-a2
+    addq.l  #4,sp
+
+    movem.l (sp)+,d0-d2/a0-a2       ; restore state
 
 _sort_loop_skip_swap:
     addq.w  #2,vBS_Index            ; Move to next list index
     dbra    d1,_sort_loop           ; Decrement the loop counter
 
-	addq.w	#1,vBS_Iters            ; Increment iter counter
+	addq.l	#1,vBS_Iters            ; Increment iter counter
 
     movea.l vBS_OnIterPtr,a2
     movem.l d0-d2/a0-a2,-(sp)
@@ -99,9 +106,9 @@ _sort_done:
     section bss
 ;-------------------------------------------------------------------------------
 
-vBS_Iters:      ds.w    1
-vBS_Comps:      ds.w    1
-vBS_Swaps:      ds.w    1
+vBS_Iters:      ds.l    1
+vBS_Comps:      ds.l    1
+vBS_Swaps:      ds.l    1
 
 vBS_ValA:       ds.w    1
 vBS_ValB:       ds.w    1
